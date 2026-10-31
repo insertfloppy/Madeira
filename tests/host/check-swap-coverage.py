@@ -484,6 +484,61 @@ static void test_reserve( void )
     munmap( r, 16u << 20 );
 }
 
+/* ml2191: broad with a 64 KB floor: small whole reservations side by side in
+ * the address space and the file grow one extent; partial releases still
+ * split it, the data stays, and everything comes back at the end */
+static void test_small_merge( void )
+{
+    struct file_view v = { 0, 0, 0 };
+    unsigned rw = VPROT_READ | VPROT_WRITE | VPROT_COMMITTED;
+    char *r = region( 0x7068000000ULL, 4u << 20 );
+    unsigned k, n0;
+    size_t i;
+    env( "broad", "64", NULL );
+    reset_tier();
+    ios_swap_ext_merges = 0;
+    CHECK( ios_swap_min == (64u << 10), "broad: MIN_KB 64" );
+    for (k = 0; k < 16; k++)
+    {
+        v.base = r + k * 0x10000; v.size = 0x10000;
+        CHECK( ios_swap_whole_resv( &v, rw ) == 1, "64 KB reservation handled" );
+        memset( r + k * 0x10000, 0x40 + k, 0x10000 );
+    }
+    CHECK( ios_swap_n == 1 && ios_swap_ext[0].len == 0x100000 && ios_swap_ext[0].resv, "16 side-by-side 64 KB reservations are one extent" );
+    CHECK( ios_swap_ext_merges == 15 && ios_swap_resv_n == 16 && ios_swap_bump == 0x100000, "15 merges, 16 reservations, contiguous file range" );
+    CHECK( ios_swap_bytes == 0x100000, "bytes count every merged piece" );
+    /* a gap: the next one is not adjacent and takes its own entry */
+    v.base = r + 0x200000; v.size = 0x10000;
+    ios_swap_whole_resv( &v, rw );
+    memset( r + 0x200000, 0x77, 0x10000 );
+    CHECK( ios_swap_n == 2 && ios_swap_ext_merges == 15, "a non-adjacent reservation gets its own extent" );
+    /* adjacent in memory but its file range is taken: no merge, new entry */
+    v.base = r + 0x100000; v.size = 0x10000;
+    n0 = ios_swap_n;
+    ios_swap_whole_resv( &v, rw );
+    memset( r + 0x100000, 0x66, 0x10000 );
+    CHECK( ios_swap_n == n0 + 1 && ios_swap_ext_merges == 15, "adjacent in memory, not in the file: own extent" );
+    /* a big one never merges */
+    v.base = r + 0x210000; v.size = 0x100000;
+    n0 = ios_swap_n;
+    ios_swap_whole_resv( &v, rw );
+    CHECK( ios_swap_n == n0 + 1, "a reservation of 1 MB or more never merges" );
+    /* free the 5th 64 KB piece: the merged extent splits, the rest keeps its data */
+    ios_swap_release_range( r + 4 * 0x10000, 0x10000, 0 );
+    anon_mmap_fixed( r + 4 * 0x10000, 0x10000, PROT_READ | PROT_WRITE, 0 );
+    for (k = 0; k < 16; k++)
+    {
+        if (k == 4) continue;
+        for (i = 0; i < 0x10000; i += 0x1000) if ((unsigned char)r[k * 0x10000 + i] != 0x40 + k) { CHECK( 0, "merged pieces keep their data after a split" ); k = 16; break; }
+    }
+    CHECK( (unsigned char)r[0x200000] == 0x77 && (unsigned char)r[0x100000] == 0x66, "the other extents keep their data" );
+    ios_swap_release_range( r, 4u << 20, 0 );
+    CHECK( ios_swap_n == 0 && ios_swap_bump == 0 && ios_swap_nfree == 0, "small-merge release returns all file space" );
+    CHECK( !ios_swap_merge_small, "merging is only on inside ios_swap_whole_resv" );
+    munmap( r, 4u << 20 );
+    ios_swap_ext_merges = 0;
+}
+
 /* ml1291: a give queued to the punch thread */
 static void test_deferred_punch( void )
 {
@@ -591,6 +646,7 @@ int main( int argc, char **argv )
     test_commit_copyback();
     test_classic_commit();
     test_reserve();
+    test_small_merge();
     test_deferred_punch();
     test_punch_failure();
     env( "blocks", NULL, NULL );

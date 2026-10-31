@@ -21724,8 +21724,17 @@ static uint64_t ios_swap_cap, ios_swap_bump;
 /* resv: the extent maps a whole reservation (wide at reserve time, broad), so a
  * decommit inside it punches the file in place (ml1257). key: the size asked for
  * (reservation or commit), the churn filter's unit; born: ns when it was backed
- * (ml1258). img: an image section's (madeira-bcd swap-images, ios_swap_image_map). */
-static struct { char *va; size_t len; uint64_t off; int resv; size_t key; uint64_t born; int img; } ios_swap_ext[16384];
+ * (ml1258). img: an image section's (madeira-bcd swap-images, ios_swap_image_map).
+ * ml2191: 65536 entries (16384 before). Grounded (UE4) commits ~4.7 GB as 64 KB
+ * VirtualAlloc reservations; with MADEIRA_SWAP_MIN_KB=64 in broad those need far
+ * more extents, so small whole reservations that follow an extent in both the
+ * address space and the file also grow that extent (ios_swap_map). */
+#define IOS_SWAP_EXT_MAX 65536
+/* ml2191: whole reservations below this size may extend the extent they follow */
+#define IOS_SWAP_MERGE_BELOW (1u << 20)
+static int ios_swap_merge_small;              /* set by ios_swap_whole_resv around its ios_swap_map */
+static unsigned long long ios_swap_ext_merges;
+static struct { char *va; size_t len; uint64_t off; int resv; size_t key; uint64_t born; int img; } ios_swap_ext[IOS_SWAP_EXT_MAX];
 static unsigned ios_swap_n;
 static struct { uint64_t off, len; } ios_swap_free[8192];
 static unsigned ios_swap_nfree;
@@ -21910,6 +21919,26 @@ static uint64_t ios_swap_take( size_t len )
     if (ios_swap_bump + len > ios_swap_logical) return (uint64_t)-1;
     ios_swap_bump += len;
     return ios_swap_bump - len;
+}
+/* ml2191: take exactly [want, want+len) when it is free: at the bump pointer, or
+ * at the start of a free range. -1 otherwise (the caller falls back). */
+static uint64_t ios_swap_take_at( uint64_t want, size_t len )
+{
+    unsigned i;
+    if (want == ios_swap_bump)
+    {
+        if (ios_swap_bump + len > ios_swap_logical) return (uint64_t)-1;
+        ios_swap_bump += len;
+        return want;
+    }
+    for (i = 0; i < ios_swap_nfree; i++)
+    {
+        if (ios_swap_free[i].off != want || ios_swap_free[i].len < len) continue;
+        if (ios_swap_free[i].len > len) { ios_swap_free[i].off += len; ios_swap_free[i].len -= len; }
+        else ios_swap_free[i] = ios_swap_free[--ios_swap_nfree];
+        return want;
+    }
+    return (uint64_t)-1;
 }
 /* Return a file range to the free list. blocks/wide/broad: merged with the free
  * ranges it touches, and a range ending at the bump pointer lowers it. */
@@ -22173,10 +22202,39 @@ static int ios_swap_map( void *base, size_t size, int unix_prot )
     char *he = (char *)(((uintptr_t)base + size) & ~(uintptr_t)host_page_mask);
     size_t len; uint64_t off; void *p;
     if (he <= hs) return IOS_SW_SMALL;
-    if (ios_swap_n >= 16384) { if (ios_swap_v2) ios_swap_refused++; return IOS_SW_REFUSED; }
+    if (ios_swap_n >= IOS_SWAP_EXT_MAX) { if (ios_swap_v2) ios_swap_refused++; return IOS_SW_REFUSED; }
     /* ml1257: in broad the cap is the disk the sparse file really occupies */
     if (ios_swap_broad && ios_swap_disk_used() >= ios_swap_cap) { ios_swap_disk_refused++; ios_swap_refused++; return IOS_SW_REFUSED; }
     len = he - hs;
+    /* ml2191: a small whole reservation right after a small whole-reservation
+     * extent, whose file range continues that extent's, grows it instead of
+     * taking a table entry: UE4's 64 KB reservations are mostly packed side by
+     * side. Only the newest few extents are looked at. */
+    if (ios_swap_merge_small && size < IOS_SWAP_MERGE_BELOW)
+    {
+        unsigned i, lo_i = ios_swap_n > 8 ? ios_swap_n - 8 : 0;
+        for (i = ios_swap_n; i-- > lo_i;)
+        {
+            if (!ios_swap_ext[i].resv || ios_swap_ext[i].img || ios_swap_ext[i].key >= IOS_SWAP_MERGE_BELOW ||
+                ios_swap_ext[i].va + ios_swap_ext[i].len != hs) continue;
+            off = ios_swap_take_at( ios_swap_ext[i].off + ios_swap_ext[i].len, len );
+            if (off == (uint64_t)-1) break;
+            p = mmap( hs, len, unix_prot, MAP_FIXED | MAP_SHARED, ios_swap_fd, (off_t)off );
+            if (p == MAP_FAILED) { ios_swap_give( off, len ); break; }
+            ios_swap_ext[i].len += len;
+            /* the caller marks ios_swap_ext[ios_swap_n - 1] as a reservation: keep the grown one last */
+            if (i != ios_swap_n - 1)
+            {
+                __typeof__(ios_swap_ext[0]) t = ios_swap_ext[i];
+                ios_swap_ext[i] = ios_swap_ext[ios_swap_n - 1];
+                ios_swap_ext[ios_swap_n - 1] = t;
+            }
+            ios_swap_bytes += len; if (ios_swap_bytes > ios_swap_peak) ios_swap_peak = ios_swap_bytes;
+            ios_swap_backs++;
+            ios_swap_ext_merges++;
+            return IOS_SW_BACKED;
+        }
+    }
     off = ios_swap_take( len );
     if (off == (uint64_t)-1) { ios_swap_refused++; return IOS_SW_REFUSED; }
     p = mmap( hs, len, unix_prot, MAP_FIXED | MAP_SHARED, ios_swap_fd, (off_t)off );
@@ -22302,7 +22360,7 @@ static void ios_swap_release_range( void *base, size_t size, int copy_back )
             }
             if (oa == a) { ios_swap_ext[i].va = ob; ios_swap_ext[i].off += olen; ios_swap_ext[i].len -= olen; i++; continue; }
             if (ob == b) { ios_swap_ext[i].len = oa - a; i++; continue; }
-            if (ios_swap_n < 16384)
+            if (ios_swap_n < IOS_SWAP_EXT_MAX)
             {
                 ios_swap_ext[ios_swap_n] = ios_swap_ext[i];   /* resv, key, born carry over */
                 ios_swap_ext[ios_swap_n].va = ob; ios_swap_ext[ios_swap_n].off = ios_swap_ext[i].off + (ob - a);
@@ -22363,6 +22421,9 @@ void ios_swap_stats_line( void )
              (unsigned long long)(ios_swap_logical >> 20), ios_swap_backs, ios_swap_releases, ios_swap_unbacks, ios_swap_refused,
              ios_swap_mode, disk >> 20, (unsigned long long)(ios_swap_cap >> 20), ios_swap_resv_n, ios_swap_holes,
              ios_swap_disk_refused, ios_swap_nchurny, ios_swap_churn_skips );
+    if (ios_swap_ext_merges)   /* ml2191 */
+        dprintf( 2, "[swap] ml2191 %llu small whole reservations grew the extent before them (table %u of %u)\n",
+                 ios_swap_ext_merges, ios_swap_n, (unsigned)IOS_SWAP_EXT_MAX );
     if (ios_swap_img_backs || ios_swap_img_refused)   /* madeira-bcd swap-images */
         dprintf( 2, "[swap] swap-images: %llu MB of image sections in the file (peak %llu), %llu sections moved, %llu refused\n",
                  ios_swap_img_bytes >> 20, ios_swap_img_peak >> 20, ios_swap_img_backs, ios_swap_img_refused );
@@ -22505,7 +22566,9 @@ static int ios_swap_whole_resv( struct file_view *view, unsigned int vprot )
     if (ios_swap_churny( view->size ))   /* ml1258 */
     { ios_swap_churn_skips++; ios_swap_skip_bytes[IOS_SWK_CHURN] += view->size; return 0; }
     ios_swap_map_tag = " (whole reservation, ml1257)";
+    ios_swap_merge_small = 1;   /* ml2191 */
     why = ios_swap_map( view->base, view->size, get_unix_prot( vprot ) );
+    ios_swap_merge_small = 0;
     ios_swap_map_tag = "";
     if (why == IOS_SW_BACKED)
     {
@@ -22529,7 +22592,7 @@ static int ios_swap_whole_resv( struct file_view *view, unsigned int vprot )
 static uint64_t ios_swap_image_take( size_t len )
 {
     uint64_t off;
-    if (ios_swap_fd < 0 || !len || (len & host_page_mask) || ios_swap_n >= 16384) return (uint64_t)-1;
+    if (ios_swap_fd < 0 || !len || (len & host_page_mask) || ios_swap_n >= IOS_SWAP_EXT_MAX) return (uint64_t)-1;
     if (ios_swap_broad && ios_swap_disk_used() >= ios_swap_cap) { ios_swap_disk_refused++; ios_swap_img_refused++; return (uint64_t)-1; }
     off = ios_swap_take( len );
     if (off == (uint64_t)-1) ios_swap_img_refused++;
@@ -22539,7 +22602,7 @@ static int ios_swap_image_map( char *va, size_t len, uint64_t off )
 {
     void *p;
     if (ios_swap_fd < 0) return 0;
-    if (((uintptr_t)va & host_page_mask) || ios_swap_n >= 16384 || ios_swap_overlaps( va, len ))
+    if (((uintptr_t)va & host_page_mask) || ios_swap_n >= IOS_SWAP_EXT_MAX || ios_swap_overlaps( va, len ))
     {
         ios_swap_give( off, len );
         ios_swap_img_refused++;

@@ -650,6 +650,27 @@ enum GameRecommendations {
         env.MADEIRA_EC_HOOK_TRACE = 0
         """)
 
+    /// Project Zomboid's legacy build 41 (Steam's b41 beta branch): no
+    /// projectzomboid.jar; its classes sit loose under java\ beside the libraries'
+    /// jars, all on the launcher's class path, so version 4's java.class.path would
+    /// leave the game unable to find its own classes. The same list without it.
+    static let projectZomboidB41 = GameRecommendation(
+        id: "project-zomboid-b41", title: "Project Zomboid (build 41)", version: 1,
+        config: """
+        # Madeira's recommended settings for Project Zomboid (build 41).
+        # Reset to Recommended, at the bottom of the game's settings, brings them back.
+        env._JAVA_OPTIONS = -XX:-UseZGC -XX:+UseG1GC -XX:TieredStopAtLevel=1
+        env.WINEDEBUG = err+all,err-virtual,fixme-all
+        env.MADEIRA_EC_HOOK_TRACE = 0
+        """)
+
+    /// Build 41 when the game's folder has its program but no projectzomboid.jar;
+    /// the current list otherwise (and before the game is installed).
+    static func projectZomboidList(folder: String, fileExists: (String) -> Bool) -> GameRecommendation {
+        fileExists(folder + "\\ProjectZomboid64.exe") && !fileExists(folder + "\\projectzomboid.jar")
+            ? projectZomboidB41 : projectZomboid
+    }
+
     /// Counter-Strike 2 (Steam; tested on an iPhone 17 Pro Max, build 47, 2026-10-30).
     /// v8.dll (48 MB, the Panorama UI) found no room in the JIT pool and cs2.exe
     /// stopped (build 39). Pure-x64 DLLs run from their loaded image instead of a
@@ -912,7 +933,7 @@ enum GameRecommendations {
         """)
 
     static let all = [rdr2Steam, rdr2Other, gta5EnhancedSteam, gta5EnhancedOther, ghostOfTsushima, godOfWar, horizonZeroDawn,
-                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, projectZomboid,
+                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, projectZomboid, projectZomboidB41,
                       counterStrike2, escapists2, slayTheSpire2, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,
                       ffxivLauncher, ffxivSetup, standard]
 
@@ -953,7 +974,9 @@ enum GameRecommendations {
             if steamAppID.map(fallout3AppIDs.contains) == true || installFolder == "fallout 3"
                 || installFolder == "fallout 3 goty" { return fallout3 }
             if blackOps2AppIDs.contains(steamAppID ?? 0) || installFolder == "call of duty black ops ii" { return blackOps2 }
-            if steamAppID == projectZomboidAppID || installFolder == "projectzomboid" { return projectZomboid }
+            if steamAppID == projectZomboidAppID || installFolder == "projectzomboid" {
+                return projectZomboidList(folder: path, fileExists: fileExists)
+            }
             if steamAppID == counterStrike2AppID || installFolder == "counter-strike global offensive" { return counterStrike2 }
             if steamAppID == escapists2AppID || installFolder == "the escapists 2" { return escapists2 }
             if steamAppID == slayTheSpire2AppID || installFolder == "slay the spire 2" { return slayTheSpire2 }
@@ -988,7 +1011,7 @@ enum GameRecommendations {
         case "t6sp.exe", "t6zm.exe", "t6mp.exe":
             return blackOps2
         case "projectzomboid64.exe":
-            return projectZomboid
+            return projectZomboidList(folder: path.lastIndex(of: "\\").map { String(path[..<$0]) } ?? "", fileExists: fileExists)
         case "cs2.exe":
             return counterStrike2
         case "theescapists2.exe":

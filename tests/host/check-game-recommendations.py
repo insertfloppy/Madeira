@@ -65,11 +65,11 @@ for m in re.finditer(r'static let (\w+) = GameRecommendation\(\n\s*id: "([^"]+)"
     lines = [line[len(indent):] if line.startswith(indent) else line for line in body.split('\n')]
     presets[ident] = dict(name=name, title=title, version=int(version), lines=lines, switches=' '.join((switches or '').split()))
 assert set(presets) == {'rdr2-steam', 'rdr2-other', 'gta5e-steam', 'gta5e-other', 'ghost-of-tsushima', 'god-of-war',
-                        'horizon-zero-dawn', 'dark-souls-remastered', 'dark-souls-iii', 'fallout-new-vegas', 'fallout-3', 'black-ops-2', 'project-zomboid',
+                        'horizon-zero-dawn', 'dark-souls-remastered', 'dark-souls-iii', 'fallout-new-vegas', 'fallout-3', 'black-ops-2', 'project-zomboid', 'project-zomboid-b41',
                         'counter-strike-2', 'escapists-2', 'slay-the-spire-2', 'rockstar-launcher', 'rockstar-launcher-setup', 'ubisoft-connect', 'ubisoft-connect-setup', 'battle-net',
                         'battle-net-setup', 'ffxiv-launcher', 'ffxiv-setup', 'standard'}, sorted(presets)
 assert ('static let all = [rdr2Steam, rdr2Other, gta5EnhancedSteam, gta5EnhancedOther, ghostOfTsushima, godOfWar, horizonZeroDawn,\n'
-        '                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, projectZomboid,\n'
+        '                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, projectZomboid, projectZomboidB41,\n'
         '                      counterStrike2, escapists2, slayTheSpire2, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,\n'
         '                      ffxivLauncher, ffxivSetup, standard]') in lists_src
 
@@ -87,7 +87,7 @@ for ident, p in presets.items():
     # was tested through Madeira Dock with the standard list's lines.
     # The publishers' launchers' Chromium clients take no release delay (their allocator
     # reserves, releases and reserves again), and their installers the standard line only.
-    if ident in ('standard', 'fallout-new-vegas', 'fallout-3', 'black-ops-2', 'project-zomboid', 'counter-strike-2', 'escapists-2', 'slay-the-spire-2',
+    if ident in ('standard', 'fallout-new-vegas', 'fallout-3', 'black-ops-2', 'project-zomboid', 'project-zomboid-b41', 'counter-strike-2', 'escapists-2', 'slay-the-spire-2',
                  'rockstar-launcher-setup',
                  'ubisoft-connect', 'ubisoft-connect-setup', 'battle-net', 'battle-net-setup', 'ffxiv-launcher', 'ffxiv-setup'):
         assert not set(FORK_DEFAULTS) & set(p['lines']), (ident, "the list has none of madeira-bcd's defaults")
@@ -290,8 +290,13 @@ print('PASS: RDR2 (Steam) is the owner\'s 463 list plus the 466, 467, 470, 472, 
 # Recognition: Steam by App ID or steamapps\common folder; everything else by the program's name.
 match = block(lists_src, 'static func match(', '\n    }\n')
 assert 'rdr2AppID = 1174180, gta5EnhancedAppID = 3240220, ghostAppID = 2215430, godOfWarAppID = 1593500,\n               horizonZeroDawnAppID = 1151640, darkSoulsRemasteredAppID = 570940, darkSoulsIIIAppID = 374320,\n               projectZomboidAppID = 108600' in lists_src
-assert 'if steamAppID == projectZomboidAppID || installFolder == "projectzomboid" { return projectZomboid }' in match
-assert 'case "projectzomboid64.exe":\n            return projectZomboid' in match
+assert 'if steamAppID == projectZomboidAppID || installFolder == "projectzomboid" {\n                return projectZomboidList(folder: path, fileExists: fileExists)' in match
+assert 'case "projectzomboid64.exe":\n            return projectZomboidList(folder: path.lastIndex(of: "\\\\").map { String(path[..<$0]) } ?? "", fileExists: fileExists)' in match
+# Build 41 has no projectzomboid.jar (classes loose under java\), so the class-path line would stop it starting.
+pz, pz41 = presets['project-zomboid'], presets['project-zomboid-b41']
+assert any('-Djava.class.path=projectzomboid.jar;.' in line for line in pz['lines'])
+assert not any('java.class.path' in line for line in pz41['lines'])
+assert [line.replace(' -Djava.class.path=projectzomboid.jar;.', '') for line in pz['lines'][2:]] == pz41['lines'][2:], (pz['lines'], pz41['lines'])
 assert 'let installFolder = last == steamFolder ? steamFolder : nil' in match
 assert 'installFolder == "red dead redemption 2"' in match and 'installFolder == "grand theft auto v enhanced"' in match
 assert 'case "ghostoftsushima.exe":' in match and 'case "gow.exe":' in match and 'case "rdr2.exe", "playrdr2.exe":' in match
@@ -541,6 +546,13 @@ check(id(#"C:\Games\Horizon Zero Dawn Remastered\HorizonZeroDawnRemastered.exe"#
 check(id(steam + #"\Call of Duty Black Ops II"#, 202970) == "black-ops-2" && id(steam + #"\Call of Duty Black Ops II"#, 212910) == "black-ops-2",
       "Black Ops II's campaign and Zombies from Steam")
 check(id(steam + #"\Call of Duty Black Ops II"#) == "black-ops-2", "Black Ops II by its Steam folder")
+let pzDir = steam + #"\ProjectZomboid"#
+check(id(pzDir, 108600) == "project-zomboid" && id(pzDir) == "project-zomboid", "Project Zomboid before it is installed: the current list")
+check(id(pzDir, 108600, files: [pzDir + #"\ProjectZomboid64.exe"#, pzDir + #"\projectzomboid.jar"#]) == "project-zomboid", "Project Zomboid with its jar")
+check(id(pzDir, 108600, files: [pzDir + #"\ProjectZomboid64.exe"#]) == "project-zomboid-b41", "build 41: the program, no jar")
+check(id(pzDir + #"\ProjectZomboid64.exe"#, files: [pzDir + #"\projectzomboid64.exe"#]) == "project-zomboid-b41", "build 41 by its program")
+check(id(#"C:\Games\PZ\ProjectZomboid64.exe"#, files: [#"C:\Games\PZ\ProjectZomboid64.exe"#, #"C:\Games\PZ\projectzomboid.jar"#]) == "project-zomboid",
+      "the current build by its program")
 check(id(steam + #"\Call of Duty Black Ops II\t6zm.exe"#) == "black-ops-2" && id(#"D:\BO2\T6SP.EXE"#) == "black-ops-2",
       "Black Ops II by its programs")
 check(id(steam + #"\Call of Duty Black Ops"#, 42700) == "none", "the first Black Ops is another game")

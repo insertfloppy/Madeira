@@ -22275,7 +22275,9 @@ static int ios_swap_map( void *base, size_t size, int unix_prot )
      * extent, whose file range continues that extent's, grows it instead of
      * taking a table entry: UE4's 64 KB reservations are mostly packed side by
      * side. Only the newest few extents are looked at. */
-    if (ios_swap_merge_small && size < IOS_SWAP_MERGE_BELOW)
+    /* a release inside a grown extent splits it and needs a free entry: stop
+     * growing extents while fewer than 1024 are left, so splits find one */
+    if (ios_swap_merge_small && size < IOS_SWAP_MERGE_BELOW && ios_swap_n < IOS_SWAP_EXT_MAX - 1024)
     {
         unsigned i, lo_i = ios_swap_n > 8 ? ios_swap_n - 8 : 0;
         for (i = ios_swap_n; i-- > lo_i;)

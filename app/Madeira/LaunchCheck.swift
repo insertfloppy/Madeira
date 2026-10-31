@@ -362,6 +362,11 @@ enum KnownGames {
         KnownGame(id: "megabonk", title: "Megabonk", appIDs: [],
                   folders: ["megabonk"], programs: ["megabonk.exe"],
                   tests: [KnownTest(device: nil, os: nil, build: 31, memoryGB: 0)], note: ""),
+        // Multiplayer on Steam's x86-64 branch with -nochromium; the Chromium main menu doesn't load yet.
+        KnownGame(id: "garrys-mod", title: "Garry's Mod", appIDs: [4000],
+                  folders: ["garrysmod"], programs: ["gmod.exe"],
+                  tests: [onIPhone17ProMax(build: 60)],
+                  note: "Multiplayer, on Steam version x86-64 with -nochromium in Launch arguments and Madeira's recommended settings. The main menu doesn't load yet (\"Menu failed to load\"): use the server browser, or press ~ for the console and type connect <address>. Single player: in the console, gamemode sandbox, then map gm_construct. Server web pages (welcome screens, some HUD icons) stay blank."),
         KnownGame(id: "fallout-new-vegas", title: "Fallout: New Vegas", appIDs: [22380],
                   folders: ["fallout new vegas"], programs: ["falloutnv.exe"],
                   tests: [onIPhone17ProMax(build: 18)],

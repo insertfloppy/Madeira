@@ -535,6 +535,23 @@ static void test_small_merge( void )
     ios_swap_release_range( r, 4u << 20, 0 );
     CHECK( ios_swap_n == 0 && ios_swap_bump == 0 && ios_swap_nfree == 0, "small-merge release returns all file space" );
     CHECK( !ios_swap_merge_small, "merging is only on inside ios_swap_whole_resv" );
+    /* near a full table no extent grows, so a later split still finds an entry */
+    {
+        unsigned saved = ios_swap_n;
+        v.base = r; v.size = 0x10000;
+        ios_swap_whole_resv( &v, rw );
+        ios_swap_n = IOS_SWAP_EXT_MAX - 1024;
+        ios_swap_ext[ios_swap_n - 1] = ios_swap_ext[0];
+        v.base = r + 0x10000;
+        ios_swap_whole_resv( &v, rw );
+        CHECK( ios_swap_ext_merges == 15 && ios_swap_ext[ios_swap_n - 1].va == r + 0x10000, "no merge with fewer than 1024 entries left" );
+        ios_swap_ext[0] = ios_swap_ext[ios_swap_n - 1];
+        ios_swap_ext[1] = ios_swap_ext[ios_swap_n - 2];
+        ios_swap_n = 2;
+        ios_swap_release_range( r, 4u << 20, 0 );
+        CHECK( ios_swap_n == 0 && ios_swap_bump == 0 && ios_swap_nfree == 0, "guard test returns all file space" );
+        (void)saved;
+    }
     munmap( r, 4u << 20 );
     ios_swap_ext_merges = 0;
 }

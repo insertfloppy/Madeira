@@ -2911,8 +2911,10 @@ struct LibraryView: View {
     @ObservedObject private var steamGames = SteamGamesModel.shared
     @ObservedObject private var steamLibrary = SteamOwnedLibrary.shared
     private var entries: [LibraryEntry] {
-        // Steam games are listed in their own section (SteamGames.swift).
-        let visible = model.entries.filter { $0.desktop != true && $0.steamAppID == nil && $0.epicAppName == nil && (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search)) }
+        // Steam games are listed in their own section (SteamGames.swift), and so is
+        // FINAL FANTASY XIV (FFXIVLibrary.swift).
+        let ffxivSection = FFXIVLibrary.enabled
+        let visible = model.entries.filter { $0.desktop != true && $0.steamAppID == nil && $0.epicAppName == nil && !(ffxivSection && FFXIVLibrary.isFFXIV($0)) && (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search)) }
         if sort == "added" { return visible.reversed() }
         return visible.sorted {
             if sort == "played", $0.lastPlayed != $1.lastPlayed { return ($0.lastPlayed ?? .distantPast) > ($1.lastPlayed ?? .distantPast) }
@@ -2920,11 +2922,17 @@ struct LibraryView: View {
             return $0.title.localizedStandardCompare($1.title) == .orderedAscending
         }
     }
+    /// FINAL FANTASY XIV's entries, for its section, by title.
+    private var ffxivEntries: [LibraryEntry] {
+        guard FFXIVLibrary.enabled else { return [] }
+        return model.entries.filter { FFXIVLibrary.isFFXIV($0) && (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search)) }
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    }
     /// The games you added in the page's order, for the controller's focus. Grouping
     /// and sorting go game by game, so their order among the Steam games is the
     /// order without them.
     private var focusOrder: [LibraryEntry] {
-        guard group != "platform" else { return entries }
+        guard group != "platform" else { return ffxivEntries + entries }
         // A library file edited by hand (or written by a fork) may repeat an id: keep the first.
         let positions = Dictionary(model.entries.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         let byID = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -3186,6 +3194,12 @@ struct LibraryView: View {
                 if steamFirst {
                     SteamGamesSection(search: search, layout: layout, sort: sort, width: viewport.size.width,
                                       part: .installed, open: { selected = $0 })
+                }
+                // FINAL FANTASY XIV (FFXIVLibrary.swift): its entries, or an install card.
+                if FFXIVLibrary.enabled {
+                    FFXIVSection(entries: ffxivEntries, open: { selected = $0 }) { games in
+                        cells(games, width: viewport.size.width)
+                    }
                 }
                 if SteamGamesSection.shown {
                     VStack(alignment: .leading, spacing: 14) {
@@ -3461,6 +3475,9 @@ struct LibraryDetail: View {
     @State private var squareEnix: FFXIVInstall?
     @State private var squareEnixSignIn = false
     @State private var squareEnixSignedIn = false
+    /// What Play's sign-in found pending (FFXIVLibrary.swift's Update section).
+    @State private var squareEnixUpdate: SquareEnixUpdate?
+    @ObservedObject private var ffxiv = FFXIVLibrary.shared
     @State private var copiedLink = false
     /// Where Play is on screen: the starting screen grows out of it (LaunchCurtain).
     @State private var playFrame: CGRect = .zero
@@ -3541,6 +3558,9 @@ struct LibraryDetail: View {
         // FINAL FANTASY XIV signs in first, in its own sheet (SquareEnixSignInView.swift);
         // launch() follows once the sheet has closed with a game session.
         if squareEnix != nil {
+            guard !ffxiv.isBusy(entry.id) else {
+                error = "FINAL FANTASY XIV is downloading an update. Play when it finishes."; return
+            }
             guard SquareEnixGame.license(of: entry) != nil else {
                 error = "Choose the license your Square Enix account plays on (Square Enix › License) before playing."; return
             }
@@ -3952,7 +3972,10 @@ struct LibraryDetail: View {
                     EpicEntrySection(entry: $entry) { leaving = true; dismiss() }
                     EpicCloudSection(appName: appName)
                 }
-                if squareEnix != nil {
+                if let install = squareEnix {
+                    if FFXIVLibrary.enabled {
+                        FFXIVUpdateSection(entry: entry, install: install, update: $squareEnixUpdate)
+                    }
                     SquareEnixEntrySection(entry: $entry)
                 }
                 Section {
@@ -4022,7 +4045,8 @@ struct LibraryDetail: View {
             launch()
         }) {
             if let install = squareEnix, let license = SquareEnixGame.license(of: entry) {
-                SquareEnixSignInSheet(entry: entry, install: install, license: license) { signedIn in
+                SquareEnixSignInSheet(entry: entry, install: install, license: license,
+                                      updateNeeded: FFXIVLibrary.enabled ? { squareEnixUpdate = $0 } : nil) { signedIn in
                     // This launch only: the client and its session (LibraryEntry's transient values).
                     LibraryEntry.setTransientProgram(SquareEnixGame.clientRelativePath(for: entry), for: entry.id)
                     LibraryEntry.setTransientArguments(signedIn.arguments.joined(separator: " "), for: entry.id)

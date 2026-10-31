@@ -633,12 +633,19 @@ enum GameRecommendations {
     /// same point (376k vs ~800k: C2's recompiles patch the code cache, and every
     /// patch re-translates a page), the menus answer faster and play was fine.
     /// Time to the main menu stayed about the same.
+    /// Version 4 (iPhone, build 60, 2026-10-31): the launcher's class path is
+    /// ".;projectzomboid.jar", so every class load first looked in the game folder,
+    /// and each miss is a slow case-insensitive Wine path lookup (fstatat, xattrs).
+    /// _JAVA_OPTIONS comes after the launcher's options, so its java.class.path
+    /// wins: the jar first, the folder second (loose class files, as Java mods
+    /// and older builds use, still load). Main menu in about 2.5 minutes instead
+    /// of 4 to 4.5.
     static let projectZomboid = GameRecommendation(
-        id: "project-zomboid", title: "Project Zomboid", version: 3,
+        id: "project-zomboid", title: "Project Zomboid", version: 4,
         config: """
         # Madeira's recommended settings for Project Zomboid.
         # Reset to Recommended, at the bottom of the game's settings, brings them back.
-        env._JAVA_OPTIONS = -XX:-UseZGC -XX:+UseG1GC -XX:TieredStopAtLevel=1
+        env._JAVA_OPTIONS = -XX:-UseZGC -XX:+UseG1GC -XX:TieredStopAtLevel=1 -Djava.class.path=projectzomboid.jar;.
         env.WINEDEBUG = err+all,err-virtual,fixme-all
         env.MADEIRA_EC_HOOK_TRACE = 0
         """)

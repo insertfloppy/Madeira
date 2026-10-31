@@ -688,6 +688,25 @@ enum GameRecommendations {
         env.MADEIRA_EC_HOOK_TRACE = 0
         """)
 
+    /// Garry's Mod (Steam; tested on an iPhone 17 Pro Max, build 60, 2026-10-31).
+    /// Multiplayer works on Steam's x86-64 branch (64-bit gmod.exe, 60 FPS against
+    /// 17-53 on the 32-bit default branch) with -nochromium. Its main menu and other
+    /// web panels are Chromium pages, and Chromium's sandboxed helpers don't start on
+    /// Madeira yet, so the menu says "Menu failed to load". CS2's pool lines carry the
+    /// 64-bit libcef.dll; pool-split is harmless and NOCOPY does nothing on 32-bit,
+    /// so the list fits both branches. No switches. How to play (branch, launch
+    /// argument, console commands) is the Will it run? note (KnownGames).
+    static let garrysMod = GameRecommendation(
+        id: "garrys-mod", title: "Garry's Mod", version: 1,
+        config: """
+        # Madeira's recommended settings for Garry's Mod.
+        # Reset to Recommended, at the bottom of the game's settings, brings them back.
+        pool = 896
+        pool-split = 1
+        env.MADEIRA_X64_IMAGE_NOCOPY = 1
+        env.MADEIRA_EC_HOOK_TRACE = 0
+        """)
+
     /// The Rockstar Games Launcher outside Steam (125hz, 6f7eb58a on
     /// 125hz/Madeira vulkan-stack-1028). Through Madeira Dock the game's own list
     /// carries the launcher chain's lines and the Dock starts the service manager; a
@@ -873,7 +892,7 @@ enum GameRecommendations {
 
     static let all = [rdr2Steam, rdr2Other, gta5EnhancedSteam, gta5EnhancedOther, ghostOfTsushima, godOfWar, horizonZeroDawn,
                       darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, projectZomboid,
-                      counterStrike2, escapists2, slayTheSpire2, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,
+                      counterStrike2, escapists2, slayTheSpire2, garrysMod, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,
                       ffxivLauncher, ffxivSetup, standard]
 
     // MARK: Recognising a game
@@ -882,7 +901,7 @@ enum GameRecommendations {
     static let rdr2AppID = 1174180, gta5EnhancedAppID = 3240220, ghostAppID = 2215430, godOfWarAppID = 1593500,
                horizonZeroDawnAppID = 1151640, darkSoulsRemasteredAppID = 570940, darkSoulsIIIAppID = 374320,
                projectZomboidAppID = 108600, counterStrike2AppID = 730, escapists2AppID = 641990,
-               slayTheSpire2AppID = 2868840
+               slayTheSpire2AppID = 2868840, garrysModAppID = 4000
     static let falloutNewVegasAppID = 22380, fallout3AppIDs: Set<Int> = [22300, 22370]   // Fallout 3, its GOTY Edition
     /// Black Ops II's campaign, Zombies and multiplayer.
     static let blackOps2AppIDs: Set<Int> = [202970, 212910, 202990]
@@ -917,6 +936,7 @@ enum GameRecommendations {
             if steamAppID == counterStrike2AppID || installFolder == "counter-strike global offensive" { return counterStrike2 }
             if steamAppID == escapists2AppID || installFolder == "the escapists 2" { return escapists2 }
             if steamAppID == slayTheSpire2AppID || installFolder == "slay the spire 2" { return slayTheSpire2 }
+            if steamAppID == garrysModAppID || installFolder == "garrysmod" { return garrysMod }
             return nil
         }
         // A program, wherever it was installed: only the game's own programs, so a
@@ -955,6 +975,8 @@ enum GameRecommendations {
             return escapists2
         case "slaythespire2.exe":
             return slayTheSpire2
+        case "gmod.exe":
+            return garrysMod
         case "launcher.exe" where Array(parts.dropLast().suffix(2)) == ["rockstar games", "launcher"]:
             // The Rockstar Games Launcher outside Steam; another publisher's Launcher.exe gets nothing here.
             return rockstarLauncher

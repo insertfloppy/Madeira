@@ -138,6 +138,8 @@ expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\Slay the Spire 2\Sla
 expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\Call of Duty Modern Warfare 2\iw4sp.exe"#, steamAppID: nil)?.id == "modern-warfare-2-2009"
        && KnownGames.find(windowsPath: "", steamAppID: 10180)?.tests.first?.build == 48, "MW2 (2009) campaign by program and App ID, build 48")
 expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\Call of Duty Modern Warfare 2\iw4mp.exe"#, steamAppID: 10190) == nil, "MW2 multiplayer is not marked tested")
+expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\GarrysMod\bin\win64\gmod.exe"#, steamAppID: nil)?.id == "garrys-mod"
+       && KnownGames.find(windowsPath: "", steamAppID: 4000)?.tests.first?.build == 60, "Garry's Mod by program and App ID, build 60")
 expect(KnownGames.find(windowsPath: #"C:\Games\Foo\foo.exe"#, steamAppID: 620) == nil, "other games are not known")
 expect(Set(KnownGames.all.map(\.id)).count == KnownGames.all.count, "known game ids are unique")
 input = base; input.tested = KnownGames.all[0]

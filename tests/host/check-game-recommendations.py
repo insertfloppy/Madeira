@@ -416,6 +416,20 @@ final class LibraryModel {
     static var drive: URL { URL(fileURLWithPath: ProcessInfo.processInfo.environment["MADEIRA_TEST_DRIVE"]!, isDirectory: true) }
 }
 
+// An external drive: C:\\External\\USB\\... opens MADEIRA_TEST_EXTERNAL, outside the drive.
+enum ExternalDrives {
+    static func driveName(library: String) -> String? {
+        let parts = library.split(separator: "/", maxSplits: 2).map(String.init)
+        return parts.count >= 2 && parts[0] == "External" ? parts[1] : nil
+    }
+    static func nativeURL(_ relative: String) throws -> URL {
+        let parts = relative.split(separator: "/").map(String.init)
+        guard parts.count >= 2, parts[1] == "USB" else { throw CocoaError(.fileNoSuchFile) }
+        return parts.dropFirst(2).reduce(URL(fileURLWithPath: ProcessInfo.processInfo.environment["MADEIRA_TEST_EXTERNAL"]!,
+                                             isDirectory: true)) { $0.appendingPathComponent($1) }
+    }
+}
+
 final class LogStore {
     static let shared = LogStore()
     enum Level { case info, error }
@@ -699,6 +713,18 @@ check(FileManager.default.createFile(atPath: folder.appendingPathComponent("gta5
 let play = #"C:\Games\GTA V Enhanced\PlayGTAV.exe"#
 check(R.recommendation(windowsPath: play, steamAppID: nil)?.id == "gta5e-other", "drive_c is looked up in any case")
 check(R.recommendation(windowsPath: #"C:\Games\GTA V\PlayGTAV.exe"#, steamAppID: nil)?.id == "standard", "a missing game file: the standard list")
+// Project Zomboid build 41 in a Steam library on an external drive: read on the drive itself.
+let usb = URL(fileURLWithPath: ProcessInfo.processInfo.environment["MADEIRA_TEST_EXTERNAL"]!, isDirectory: true)
+let pz41Dir = usb.appendingPathComponent("SteamLibrary/steamapps/common/ProjectZomboid", isDirectory: true)
+try! FileManager.default.createDirectory(at: pz41Dir, withIntermediateDirectories: true)
+check(FileManager.default.createFile(atPath: pz41Dir.appendingPathComponent("ProjectZomboid64.exe").path, contents: Data()), "fixture")
+let pzUSB = #"C:\External\USB\SteamLibrary\steamapps\common\ProjectZomboid"#
+check(R.recommendation(windowsPath: pzUSB, steamAppID: 108600)?.id == "project-zomboid-b41", "build 41 on an external drive")
+check(R.recommendation(windowsPath: pzUSB + #"\ProjectZomboid64.exe"#, steamAppID: 108600)?.id == "project-zomboid-b41", "its program there")
+check(FileManager.default.createFile(atPath: pz41Dir.appendingPathComponent("projectzomboid.jar").path, contents: Data()), "fixture")
+check(R.recommendation(windowsPath: pzUSB, steamAppID: 108600)?.id == "project-zomboid", "the current build on an external drive")
+check(R.recommendation(windowsPath: #"C:\External\Gone\SteamLibrary\steamapps\common\ProjectZomboid"#, steamAppID: 108600)?.id
+      == "project-zomboid", "a drive not connected: the current list")
 var removed = LibraryEntry(title: "GTA V Enhanced", windowsPath: play)
 check(R.prepare(&removed, new: true) && file(play) == R.gta5EnhancedOther.fileText && LibraryPrefs.nvidia(play)
       && removed.resolution == "1280x720", "first sight of a new program outside Steam")
@@ -742,11 +768,12 @@ with tempfile.TemporaryDirectory(prefix='madeira-recommended-') as directory:
                                 if line.strip() and not line.strip().startswith('#'))
         (temporary / 'main.swift').write_text(main.replace('@RDR2_CONFIG_LINES@', str(rdr2_config_lines)))
         (temporary / 'drive').mkdir()
+        (temporary / 'usb').mkdir()
         (temporary / 'configs').mkdir()
         binary = temporary / 'recommended'
         subprocess.run([compiler, str(app / 'GameRecommendations.swift'), str(app / 'GameRecommendationsApply.swift'),
                         str(temporary / 'Stubs.swift'), str(temporary / 'main.swift'), '-o', str(binary)], check=True)
-        env = dict(os.environ, MADEIRA_TEST_DRIVE=str(temporary / 'drive'), MADEIRA_TEST_CONFIGS=str(temporary / 'configs'))
+        env = dict(os.environ, MADEIRA_TEST_DRIVE=str(temporary / 'drive'), MADEIRA_TEST_EXTERNAL=str(temporary / 'usb'), MADEIRA_TEST_CONFIGS=str(temporary / 'configs'))
         subprocess.run([str(binary)], check=True, env=env)
     elif args.require_swift:
         raise SystemExit('Swift compiler required for the recommended-settings fixture')

@@ -2434,6 +2434,204 @@ NTSTATUS WINAPI NtOpenThread( HANDLE *handle, ACCESS_MASK access,
 }
 
 
+#ifdef WINE_IOS
+/* ds3-coop [child-suspend]: the start park of a child created with
+ * CREATE_SUSPENDED (env MADEIRA_HONOR_SUSPENDED=1, see ios_park_start_pending
+ * in server_ios.c).
+ *
+ * server_init_process_done registers the child's main thread here (pending);
+ * after loader_init the ARM64EC ntdll (wine patch 0018) hands its start
+ * context to ios_park_start() through the private thread info class 0x4d50,
+ * which publishes it (parked) and waits in a zero-timeout server select: that
+ * returns once the server's suspend count, still 1 from CREATE_SUSPENDED, is
+ * back to zero (the parent's NtResumeThread), and it runs system APCs meanwhile
+ * (the injector's VirtualAllocEx, CreateRemoteThread), like the self-suspend
+ * wait in NtSuspendThread.  While it is parked, Get/SetThreadContext from other
+ * threads read and change the published context (ios_park_get_context,
+ * ios_park_set_context); the thread starts from what is left there.  A reader
+ * that comes while the thread is still pending (between loader_init and the
+ * park) waits for it, at most IOS_PARK_PENDING_SECS after registration. */
+#define IOS_PARK_MAX 8
+#define IOS_PARK_PENDING_SECS 10
+#define IOS_PARK_PENDING 1
+#define IOS_PARK_PARKED  2
+static struct ios_park
+{
+    DWORD           tid;
+    int             state;     /* 0 free, IOS_PARK_PENDING or IOS_PARK_PARKED */
+    struct timespec deadline;  /* pending: readers stop waiting after this (CLOCK_REALTIME) */
+    CONTEXT         context;   /* parked: the start context */
+} ios_parks[IOS_PARK_MAX];
+static pthread_mutex_t ios_park_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t ios_park_cond = PTHREAD_COND_INITIALIZER;
+static volatile int ios_park_used;   /* entries in use; read unlocked as a fast-path hint */
+
+static struct ios_park *ios_park_find( DWORD tid )
+{
+    int i;
+    for (i = 0; i < IOS_PARK_MAX; i++)
+        if (ios_parks[i].state && ios_parks[i].tid == tid) return &ios_parks[i];
+    return NULL;
+}
+
+/* main thread, from server_init_process_done: it will park after loader_init */
+void ios_park_start_register(void)
+{
+    extern _Thread_local int ios_park_start_pending;
+    struct ios_park *park = NULL;
+    struct timespec now;
+    int i;
+
+    clock_gettime( CLOCK_REALTIME, &now );
+    pthread_mutex_lock( &ios_park_mutex );
+    for (i = 0; i < IOS_PARK_MAX && !park; i++)
+    {
+        /* a free slot, or one whose thread never parked in time (it died, or it starts as usual) */
+        if (!ios_parks[i].state) ios_park_used++;
+        else if (ios_parks[i].state != IOS_PARK_PENDING || ios_parks[i].deadline.tv_sec >= now.tv_sec) continue;
+        park = &ios_parks[i];
+    }
+    if (park)
+    {
+        park->tid = GetCurrentThreadId();
+        park->state = IOS_PARK_PENDING;
+        park->deadline = now;
+        park->deadline.tv_sec += IOS_PARK_PENDING_SECS;
+    }
+    pthread_mutex_unlock( &ios_park_mutex );
+    if (!park)
+    {
+        ios_park_start_pending = 0;
+        dprintf( 2, "[child-suspend] tid=%04x: no free park slot, starting at once\n", (int)GetCurrentThreadId() );
+    }
+}
+
+/* class 0x4d50 on the parked thread itself: publish, wait for the resume, take back */
+static NTSTATUS ios_park_start( CONTEXT *context )
+{
+    DWORD tid = GetCurrentThreadId();
+    struct ios_park *park;
+    ULONG64 pc = context->Pc, x0 = context->X0;
+
+    pthread_mutex_lock( &ios_park_mutex );
+    if ((park = ios_park_find( tid )))
+    {
+        park->context = *context;
+        park->context.ContextFlags = CONTEXT_FULL;
+        park->state = IOS_PARK_PARKED;
+        pthread_cond_broadcast( &ios_park_cond );
+    }
+    pthread_mutex_unlock( &ios_park_mutex );
+    if (!park) return STATUS_NOT_FOUND;
+
+    dprintf( 2, "[child-suspend] tid=%04x parked at its start (pc=%p x0=%p) until NtResumeThread\n",
+             (int)tid, (void *)pc, (void *)x0 );
+    server_select( NULL, 0, SELECT_INTERRUPTIBLE, 0, NULL, NULL );
+
+    pthread_mutex_lock( &ios_park_mutex );
+    *context = park->context;
+    park->state = 0;
+    park->tid = 0;
+    ios_park_used--;
+    pthread_mutex_unlock( &ios_park_mutex );
+    dprintf( 2, "[child-suspend] tid=%04x resumed: pc=%p x0=%p%s\n", (int)tid, (void *)context->Pc,
+             (void *)context->X0, (context->Pc != pc || context->X0 != x0) ? " (context changed while parked)" : "" );
+    return STATUS_SUCCESS;
+}
+
+/* the parked entry of the thread behind handle, returned locked; NULL unlocked */
+static struct ios_park *ios_park_lock( HANDLE handle )
+{
+    THREAD_BASIC_INFORMATION tbi;
+    struct ios_park *park;
+    DWORD tid;
+
+    if (!ios_park_used) return NULL;
+    if (NtQueryInformationThread( handle, ThreadBasicInformation, &tbi, sizeof(tbi), NULL )) return NULL;
+    tid = HandleToULong( tbi.ClientId.UniqueThread );
+    if (tid == GetCurrentThreadId()) return NULL;
+
+    pthread_mutex_lock( &ios_park_mutex );
+    while ((park = ios_park_find( tid )) && park->state == IOS_PARK_PENDING)
+    {
+        if (pthread_cond_timedwait( &ios_park_cond, &ios_park_mutex, &park->deadline ) == ETIMEDOUT &&
+            (park = ios_park_find( tid )) && park->state == IOS_PARK_PENDING)
+        {
+            dprintf( 2, "[child-suspend] tid=%04x never parked; its context is read as usual\n", (int)tid );
+            park = NULL;
+            break;
+        }
+    }
+    if (!park) pthread_mutex_unlock( &ios_park_mutex );
+    return park;
+}
+
+BOOL ios_park_get_context( HANDLE handle, CONTEXT *context )
+{
+    DWORD flags = context->ContextFlags & ~CONTEXT_ARM64;
+    struct ios_park *park = ios_park_lock( handle );
+    const CONTEXT *from;
+
+    if (!park) return FALSE;
+    from = &park->context;
+    if (flags & CONTEXT_INTEGER)
+    {
+        memcpy( context->X, from->X, sizeof(context->X[0]) * 29 );
+        context->ContextFlags |= CONTEXT_INTEGER;
+    }
+    if (flags & CONTEXT_CONTROL)
+    {
+        context->Fp   = from->Fp;
+        context->Lr   = from->Lr;
+        context->Sp   = from->Sp;
+        context->Pc   = from->Pc;
+        context->Cpsr = from->Cpsr;
+        context->ContextFlags |= CONTEXT_CONTROL;
+    }
+    if (flags & CONTEXT_FLOATING_POINT)
+    {
+        context->Fpcr = from->Fpcr;
+        context->Fpsr = from->Fpsr;
+        memcpy( context->V, from->V, sizeof(context->V) );
+        context->ContextFlags |= CONTEXT_FLOATING_POINT;
+    }
+    dprintf( 2, "[child-suspend] GetThreadContext of the parked thread: pc=%p x0=%p\n",
+             (void *)from->Pc, (void *)from->X0 );
+    pthread_mutex_unlock( &ios_park_mutex );
+    return TRUE;
+}
+
+BOOL ios_park_set_context( HANDLE handle, const CONTEXT *context )
+{
+    DWORD flags = context->ContextFlags & ~CONTEXT_ARM64;
+    struct ios_park *park = ios_park_lock( handle );
+    CONTEXT *to;
+
+    if (!park) return FALSE;
+    to = &park->context;
+    if (flags & CONTEXT_INTEGER) memcpy( to->X, context->X, sizeof(to->X[0]) * 29 );
+    if (flags & CONTEXT_CONTROL)
+    {
+        to->Fp   = context->Fp;
+        to->Lr   = context->Lr;
+        to->Sp   = context->Sp;
+        to->Pc   = context->Pc;
+        to->Cpsr = context->Cpsr;
+    }
+    if (flags & CONTEXT_FLOATING_POINT)
+    {
+        to->Fpcr = context->Fpcr;
+        to->Fpsr = context->Fpsr;
+        memcpy( to->V, context->V, sizeof(to->V) );
+    }
+    pthread_mutex_unlock( &ios_park_mutex );
+    dprintf( 2, "[child-suspend] SetThreadContext of the parked thread: flags=%x pc=%p x0=%p\n",
+             (unsigned int)flags, (void *)context->Pc, (void *)context->X0 );
+    return TRUE;
+}
+#endif
+
+
 /******************************************************************************
  *              NtSuspendThread   (NTDLL.@)
  */
@@ -3038,6 +3236,34 @@ NTSTATUS WINAPI NtQueryInformationThread( HANDLE handle, THREADINFOCLASS class,
     unsigned int status;
 
     TRACE("(%p,%d,%p,%x,%p)\n", handle, class, data, length, ret_len);
+
+#ifdef WINE_IOS
+    /* ds3-coop [child-suspend]: private class 0x4d50 ('MP'), called by the
+     * ARM64EC ntdll's LdrInitializeThunk (wine patch 0018) on the starting
+     * thread itself.  A ULONG asks whether this thread must park at its start
+     * (CREATE_SUSPENDED honored, see ios_park_start_pending); a CONTEXT parks it
+     * there until NtResumeThread and returns the start context, changed if a
+     * SetThreadContext changed it.  Every other build answers
+     * STATUS_INVALID_INFO_CLASS, and nothing parks. */
+    if ((ULONG)class == 0x4d50)
+    {
+        extern _Thread_local int ios_park_start_pending;
+
+        if (handle != GetCurrentThread()) return STATUS_INVALID_HANDLE;
+        if (!data) return STATUS_ACCESS_VIOLATION;
+        if (length == sizeof(ULONG))
+        {
+            *(ULONG *)data = ios_park_start_pending;
+            if (ret_len) *ret_len = sizeof(ULONG);
+            return STATUS_SUCCESS;
+        }
+        if (length != sizeof(CONTEXT)) return STATUS_INFO_LENGTH_MISMATCH;
+        if (!ios_park_start_pending) return STATUS_NOT_FOUND;
+        ios_park_start_pending = 0;
+        if (ret_len) *ret_len = sizeof(CONTEXT);
+        return ios_park_start( data );
+    }
+#endif
 
     switch (class)
     {

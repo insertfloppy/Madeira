@@ -8529,6 +8529,13 @@ NTSTATUS WINAPI NtSetContextThread( HANDLE handle, const CONTEXT *context )
     DWORD flags = context->ContextFlags & ~CONTEXT_ARM64;
 
     if (self && (flags & CONTEXT_DEBUG_REGISTERS)) self = FALSE;
+#ifdef WINE_IOS
+    {
+        /* ds3-coop [child-suspend]: a child parked at its start (thread_ios.c) */
+        extern BOOL ios_park_set_context( HANDLE handle, const CONTEXT *context );
+        if (!self && ios_park_set_context( handle, context )) return STATUS_SUCCESS;
+    }
+#endif
 
     /* iOS-Madeira diag: companion to [set-ctx] in signal_set_full_context —
      * catch cross-thread PC rewrites into the FEX tail carve that land on
@@ -8685,7 +8692,17 @@ NTSTATUS WINAPI NtGetContextThread( HANDLE handle, CONTEXT *context )
 
     if (!self)
     {
-        NTSTATUS ret = get_thread_context( handle, context, &self, IMAGE_FILE_MACHINE_ARM64 );
+        NTSTATUS ret;
+#ifdef WINE_IOS
+        /* ds3-coop [child-suspend]: a child parked at its start (thread_ios.c) */
+        extern BOOL ios_park_get_context( HANDLE handle, CONTEXT *context );
+        if (ios_park_get_context( handle, context ))
+        {
+            set_context_exception_reporting_flags( &context->ContextFlags, CONTEXT_SERVICE_ACTIVE );
+            return STATUS_SUCCESS;
+        }
+#endif
+        ret = get_thread_context( handle, context, &self, IMAGE_FILE_MACHINE_ARM64 );
         if (!ret && !self && (needed_flags & CONTEXT_CONTROL & ~CONTEXT_ARM64) &&
             (!(context->ContextFlags & CONTEXT_CONTROL & ~CONTEXT_ARM64) || !context->Pc))
             get_context_from_amd64_area( handle, context, needed_flags );

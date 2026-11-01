@@ -65,9 +65,9 @@ for m in re.finditer(r'static let (\w+) = GameRecommendation\(\n\s*id: "([^"]+)"
     lines = [line[len(indent):] if line.startswith(indent) else line for line in body.split('\n')]
     presets[ident] = dict(name=name, title=title, version=int(version), lines=lines, switches=' '.join((switches or '').split()))
 assert set(presets) == {'rdr2-steam', 'rdr2-other', 'gta5e-steam', 'gta5e-other', 'ghost-of-tsushima', 'god-of-war',
-                        'horizon-zero-dawn', 'dark-souls-remastered', 'dark-souls-iii', 'fallout-new-vegas', 'fallout-3', 'black-ops-2', 'standard'}, sorted(presets)
+                        'horizon-zero-dawn', 'dark-souls-remastered', 'dark-souls-iii', 'fallout-new-vegas', 'fallout-3', 'black-ops-1', 'black-ops-2', 'standard'}, sorted(presets)
 assert ('static let all = [rdr2Steam, rdr2Other, gta5EnhancedSteam, gta5EnhancedOther, ghostOfTsushima, godOfWar, horizonZeroDawn,\n'
-        '                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, standard]') in lists_src
+        '                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps1, blackOps2, standard]') in lists_src
 
 # madeira-bcd's defaults where upstream's differ: every game madeira-bcd ran had them,
 # so every game's own list ends with them. The standard list reaches every other game
@@ -80,7 +80,7 @@ for ident, p in presets.items():
         p['tested'], p['fork'] = [line for line in p['lines'][2:] if not line.startswith('#')], []
         continue
     # The Fallout lists are the standard one plus a switch: the games ran with it.
-    if ident in ('standard', 'fallout-new-vegas', 'fallout-3', 'black-ops-2'):
+    if ident in ('standard', 'fallout-new-vegas', 'fallout-3', 'black-ops-1', 'black-ops-2'):
         assert not set(FORK_DEFAULTS) & set(p['lines']), (ident, "the standard list has none of madeira-bcd's defaults")
         p['tested'], p['fork'] = p['lines'][2:], []
         continue
@@ -197,6 +197,11 @@ assert bo2['tested'] == ['env.MADEIRA_AUDIO_LEAD_MS = 150', 'env.MADEIRA_EC_HOOK
     and bo2['version'] == 1, bo2
 assert not any(line.startswith('env.MADEIRA_AUDIO_LEAD_MS')
                for p in presets.values() if p is not bo2 for line in p['lines']), 'the 150 ms audio lead is Black Ops II\'s only'
+# Black Ops (owner's test, 2026-11-01): the standard list it ran with, Direct3D 9
+# naming a GeForce 7900 GS (the card picked for it) and 1280x720.
+bo1 = presets['black-ops-1']
+assert bo1['tested'] == ['env.MADEIRA_EC_HOOK_TRACE = 0'] and bo1['switches'] == 'olderNvidia: true, resolution: "1280x720"' \
+    and bo1['version'] == 1, bo1
 assert 'if size != GameRecommendation.screen720 { entry.resolution = size }\n            else if let lines720 = ResolutionChoices.screen720Value { entry.resolution = lines720 }' in apply_src
 gta = presets['gta5e-steam']
 assert 'env.MADEIRA_CHILD_ARGS = PlayGTAV.exe -nobattleye' in gta['lines']
@@ -479,7 +484,10 @@ check(id(steam + #"\Call of Duty Black Ops II"#, 202970) == "black-ops-2" && id(
 check(id(steam + #"\Call of Duty Black Ops II"#) == "black-ops-2", "Black Ops II by its Steam folder")
 check(id(steam + #"\Call of Duty Black Ops II\t6zm.exe"#) == "black-ops-2" && id(#"D:\BO2\T6SP.EXE"#) == "black-ops-2",
       "Black Ops II by its programs")
-check(id(steam + #"\Call of Duty Black Ops"#, 42700) == "none", "the first Black Ops is another game")
+check(id(steam + #"\Call of Duty Black Ops"#, 42700) == "black-ops-1" && id(steam + #"\Call of Duty Black Ops"#) == "black-ops-1"
+      && id(steam + #"\Call of Duty Black Ops\BlackOps.exe"#) == "black-ops-1", "the first Black Ops by App ID, folder and program")
+check(id(steam + #"\Call of Duty Black Ops"#, 42710) == "none" && id(steam + #"\Call of Duty Black Ops\BlackOpsMP.exe"#) == "none",
+      "the first Black Ops' multiplayer shares the folder and has no list")
 check(id(#"C:\Games\Foo\foo.exe"#) == "none" && id(steam + #"\Portal 2"#, 620) == "none", "other games")
 check(id("") == "none" && id("C:\\") == "none", "no path")
 check(id(steam + #"\Fallout New Vegas"#, 22380) == "fallout-new-vegas" && id(steam + #"\Fallout New Vegas"#) == "fallout-new-vegas",

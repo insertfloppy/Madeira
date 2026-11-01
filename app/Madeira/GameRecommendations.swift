@@ -603,6 +603,25 @@ enum GameRecommendations {
         env.MADEIRA_EC_HOOK_TRACE = 0
         """)
 
+    /// Call of Duty: Black Ops (Steam 42700, BlackOps.exe; tested on an iPhone 17 Pro
+    /// Max, 2026-11-01). Steam's custom-executable (CEG) step needed the empty
+    /// system32\mui and syswow64\mui folders (the wine.inf system folders), and every
+    /// start after the first needed Madeira Dock to take Steam's "nothing left to
+    /// prepare" (build/dock-patches/0003). The game drew at 2 to 20 FPS until DXMT
+    /// stopped copying its whole index buffer before each draw (build/dxmt-patches/0001).
+    /// It then ran with the standard list's line, Direct3D 9 naming a GeForce 7900 GS
+    /// with NVIDIA's driver file (the card the owner picked for it) and 1280x720.
+    /// Multiplayer (42710, BlackOpsMP.exe) shares the folder and is untested, so it
+    /// gets nothing here.
+    static let blackOps1 = GameRecommendation(
+        id: "black-ops-1", title: "Call of Duty: Black Ops", version: 1,
+        config: """
+        # Madeira's recommended settings for Call of Duty: Black Ops.
+        # Reset to Recommended, at the bottom of the game's settings, brings them back.
+        env.MADEIRA_EC_HOOK_TRACE = 0
+        """,
+        olderNvidia: true, resolution: "1280x720")
+
     /// Every other game, and the Desktop (owner's decisions, 2026-10-12): most games
     /// the owner tried outside these lists closed at start until the [ec-hook]
     /// reporter was off. It reads code a game's protection rewrites at run time
@@ -622,7 +641,7 @@ enum GameRecommendations {
         """)
 
     static let all = [rdr2Steam, rdr2Other, gta5EnhancedSteam, gta5EnhancedOther, ghostOfTsushima, godOfWar, horizonZeroDawn,
-                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, standard]
+                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps1, blackOps2, standard]
 
     // MARK: Recognising a game
 
@@ -632,6 +651,8 @@ enum GameRecommendations {
     static let falloutNewVegasAppID = 22380, fallout3AppIDs: Set<Int> = [22300, 22370]   // Fallout 3, its GOTY Edition
     /// Black Ops II's campaign, Zombies and multiplayer.
     static let blackOps2AppIDs: Set<Int> = [202970, 212910, 202990]
+    /// The first Black Ops (its untested multiplayer, 42710, shares the folder).
+    static let blackOps1AppID = 42700
 
     /// The recommendation for a game, or nil.
     /// - windowsPath: a program ("C:\Games\GoW\GoW.exe"), or a library Steam
@@ -659,6 +680,7 @@ enum GameRecommendations {
             if steamAppID.map(fallout3AppIDs.contains) == true || installFolder == "fallout 3"
                 || installFolder == "fallout 3 goty" { return fallout3 }
             if blackOps2AppIDs.contains(steamAppID ?? 0) || installFolder == "call of duty black ops ii" { return blackOps2 }
+            if steamAppID == blackOps1AppID || (steamAppID == nil && installFolder == "call of duty black ops") { return blackOps1 }
             return nil
         }
         // A program, wherever it was installed: only the game's own programs, so a
@@ -689,6 +711,8 @@ enum GameRecommendations {
             return fallout3
         case "t6sp.exe", "t6zm.exe", "t6mp.exe":
             return blackOps2
+        case "blackops.exe":
+            return blackOps1
         default:
             return nil
         }

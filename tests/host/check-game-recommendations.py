@@ -65,11 +65,11 @@ for m in re.finditer(r'static let (\w+) = GameRecommendation\(\n\s*id: "([^"]+)"
     lines = [line[len(indent):] if line.startswith(indent) else line for line in body.split('\n')]
     presets[ident] = dict(name=name, title=title, version=int(version), lines=lines, switches=' '.join((switches or '').split()))
 assert set(presets) == {'rdr2-steam', 'rdr2-other', 'gta5e-steam', 'gta5e-other', 'ghost-of-tsushima', 'god-of-war',
-                        'horizon-zero-dawn', 'dark-souls-remastered', 'dark-souls-iii', 'fallout-new-vegas', 'fallout-3', 'black-ops-2', 'project-zomboid', 'project-zomboid-b41',
+                        'horizon-zero-dawn', 'dark-souls-remastered', 'dark-souls-iii', 'fallout-new-vegas', 'fallout-3', 'batman-arkham-city', 'black-ops-2', 'project-zomboid', 'project-zomboid-b41',
                         'counter-strike-2', 'escapists-2', 'slay-the-spire-2', 'garrys-mod', 'rockstar-launcher', 'rockstar-launcher-setup', 'ubisoft-connect', 'ubisoft-connect-setup', 'battle-net',
                         'battle-net-setup', 'ffxiv-launcher', 'ffxiv-setup', 'standard'}, sorted(presets)
 assert ('static let all = [rdr2Steam, rdr2Other, gta5EnhancedSteam, gta5EnhancedOther, ghostOfTsushima, godOfWar, horizonZeroDawn,\n'
-        '                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, projectZomboid, projectZomboidB41,\n'
+        '                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, batmanArkhamCity, blackOps2, projectZomboid, projectZomboidB41,\n'
         '                      counterStrike2, escapists2, slayTheSpire2, garrysMod, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,\n'
         '                      ffxivLauncher, ffxivSetup, standard]') in lists_src
 
@@ -87,7 +87,7 @@ for ident, p in presets.items():
     # was tested through Madeira Dock with the standard list's lines.
     # The publishers' launchers' Chromium clients take no release delay (their allocator
     # reserves, releases and reserves again), and their installers the standard line only.
-    if ident in ('standard', 'fallout-new-vegas', 'fallout-3', 'black-ops-2', 'project-zomboid', 'project-zomboid-b41', 'counter-strike-2', 'escapists-2', 'slay-the-spire-2',
+    if ident in ('standard', 'fallout-new-vegas', 'fallout-3', 'batman-arkham-city', 'black-ops-2', 'project-zomboid', 'project-zomboid-b41', 'counter-strike-2', 'escapists-2', 'slay-the-spire-2',
                  'garrys-mod', 'rockstar-launcher-setup',
                  'ubisoft-connect', 'ubisoft-connect-setup', 'battle-net', 'battle-net-setup', 'ffxiv-launcher', 'ffxiv-setup'):
         assert not set(FORK_DEFAULTS) & set(p['lines']), (ident, "the list has none of madeira-bcd's defaults")
@@ -118,7 +118,7 @@ for ident, p in presets.items():
         if key != 'env.WINEDLLOVERRIDES':
             named = named.replace('socialclubhelper.exe', '')
         assert 'socialclub' not in named and 'MADEIRA_DLL_LOCAL' not in line, (ident, line)
-for ident in ('fallout-new-vegas', 'fallout-3'):
+for ident in ('fallout-new-vegas', 'fallout-3', 'batman-arkham-city'):
     assert presets[ident]['tested'] == presets['standard']['tested'] and presets[ident]['switches'] == 'olderNvidia: true', presets[ident]
 print('PASS: twenty lists, recorded fork defaults retained, Dark Souls and Fallout lists kept separate, no key twice, '
       'every non-env key in the settings catalog, no Social Club DLL lines, no variant DLL switches')
@@ -578,6 +578,11 @@ check(id(steam + #"\Slay the Spire 2"#, 2868840) == "slay-the-spire-2" && id(ste
       && id(#"C:\x\steamapps\common\Slay the Spire 2\SlayTheSpire2.exe"#) == "slay-the-spire-2", "Slay the Spire 2 by App ID, folder and program")
 check(id(steam + #"\GarrysMod"#, 4000) == "garrys-mod" && id(steam + #"\GarrysMod"#) == "garrys-mod"
       && id(steam + #"\GarrysMod\bin\win64\gmod.exe"#) == "garrys-mod", "Garry's Mod by App ID, folder and program")
+check(id(steam + #"\Batman Arkham City GOTY"#, 200260) == "batman-arkham-city" && id(steam + #"\Batman Arkham City GOTY"#) == "batman-arkham-city"
+      && id(steam + #"\Batman Arkham City"#, 57400) == "batman-arkham-city"
+      && id(steam + #"\Batman Arkham City GOTY\Binaries\Win32\BatmanAC.exe"#) == "batman-arkham-city", "Arkham City by App ID, folder and program")
+check(id(steam + #"\Batman Arkham Asylum GOTY"#, 35140) == "none", "Arkham Asylum is another game")
+check(R.batmanArkhamCity.switchSummary == "older NVIDIA card on", R.batmanArkhamCity.switchSummary)
 check(id(#"C:\Games\Foo\foo.exe"#) == "none" && id(steam + #"\Portal 2"#, 620) == "none", "other games")
 check(id("") == "none" && id("C:\\") == "none", "no path")
 check(id(steam + #"\Fallout New Vegas"#, 22380) == "fallout-new-vegas" && id(steam + #"\Fallout New Vegas"#) == "fallout-new-vegas",

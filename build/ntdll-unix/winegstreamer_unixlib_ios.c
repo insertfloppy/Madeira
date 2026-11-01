@@ -59,11 +59,13 @@
  * wg_parser_apple_ios.c) for the Media Foundation source; MADEIRA_WG_VIDEO=0
  * restores the MP3/WAV-only parser.
  *
- * wg_transform_create also REFUSES anything that is not a WMA family stream.
- * winegstreamer's other transforms (aac, h264, wmv, the resampler, the colour
- * converter) are real GStreamer pipelines with no libavcodec replacement here,
- * and a transform that accepts an H.264 stream and then emits nothing is worse
- * for the caller than one that never opened.
+ * wg_transform_create accepts WMA family streams and (ml2300) raw video to
+ * raw video, the transform behind Wine's video processor and colour
+ * converter MFTs (see "video colour converter" below; MADEIRA_WG_VCONV=0
+ * refuses it again).  winegstreamer's other transforms (aac, h264, wmv, the
+ * resampler) are real GStreamer pipelines with no libavcodec replacement
+ * here, and a transform that accepts an H.264 stream and then emits nothing
+ * is worse for the caller than one that never opened, so they are REFUSED.
  *
  * DECODING
  * --------
@@ -1605,6 +1607,598 @@ static void report_failures( struct wma_transform *transform )
 }
 
 /***********************************************************************
+ *           video colour converter   (MADEIRA ml2300)
+ *
+ * winegstreamer's video processor MFT (CLSID_VideoProcessorMFT,
+ * video_processor.c) and colour converter (color_convert.c) are thin PE
+ * shells around a raw-video wg_transform.  Upstream's is a GStreamer
+ * videoconvert pipeline; this port had none, so transform_create refused
+ * every video type and both MFTs failed SetInputType/SetOutputType.
+ *
+ * That breaks the Media Foundation source reader whenever a program asks for
+ * a format the media source does not produce itself.  The Planet Crafter
+ * (Unity 6.3, 64-bit, GOG, 2026-11-01) asks for ARGB32 from an H.264 MP4 that
+ * the wg_parser decodes to NV12: with no processor the reader answered
+ * MF_E_TOPO_CODEC_NOT_FOUND ("No suitable transform was found"), and when the
+ * parser was told to produce ARGB32 itself (MADEIRA_WG_VIDEO_FORMAT=argb32)
+ * the reader had no transform to hand back from GetServiceForStream and Unity
+ * crashed on E_NOINTERFACE.  On Windows and on upstream Wine the reader
+ * inserts this processor and exposes it as the stream's transform service.
+ *
+ * What it does: one uncompressed picture in, the same picture out in another
+ * layout, same frame size.  Input NV12, I420/IYUV, YV12, YUY2 (normalised to
+ * NV12 planes, then written by the parser core's mav_convert_picture, which
+ * already writes every output format media_source.c offers), or an RGB32 /
+ * ARGB32 / ABGR32 input converted to the same RGB format (row copy, flip).
+ * Outputs: NV12, I420/IYUV, YV12, YUY2, RGB32, ARGB32, ABGR32.  No scaling:
+ * a frame-size change is refused at create, as videoconvert would have
+ * needed videoscale for it too.
+ *
+ * Layout rules follow upstream wg_transform.c (align_video_info_planes):
+ * MFVideoFlag_BottomUpLinearRep flips the rows, a sample's `stride` (the
+ * pitch of a 2D MF buffer) wins over the default, and NV12's default stride
+ * is the width rounded up to 2 -- what Windows expects -- not to 4.
+ *
+ * MADEIRA_WG_VCONV=0 restores the refusal.  Log tag [vconv].
+ */
+#define MADEIRA_VCONV_MAGIC 0x56434e56  /* 'VCNV' */
+#define MADEIRA_VCONV_MAX_LOGS 24
+
+static const GUID madeira_MFMediaType_Video =
+    { 0x73646976, 0x0000, 0x0010, { 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71 } };
+
+static unsigned int vconv_log_count;
+#define VCONV_LOG( fmt, ... )                                                          \
+    do {                                                                               \
+        unsigned int _n = __atomic_add_fetch( &vconv_log_count, 1, __ATOMIC_RELAXED ); \
+        if (_n <= MADEIRA_VCONV_MAX_LOGS || wma_diag_on())                             \
+            dprintf( 2, "[vconv] " fmt, ## __VA_ARGS__ );                              \
+    } while (0)
+
+struct vconv_transform
+{
+    UINT32 magic;
+    pthread_mutex_t lock;
+
+    enum mav_pixel_format in_fmt, out_fmt;
+    UINT32 width, height;
+    BOOL in_flip, out_flip;
+    int bt709, full_range;
+
+    MFVIDEOFORMAT *out_format;
+    UINT32 out_format_size;
+
+    /* one converted picture waiting to be read */
+    BYTE *out_buf;
+    size_t out_cap, out_len, out_pos;
+    UINT32 out_stride;          /* stride the waiting picture was written with */
+    BOOL have_pts, have_duration, discontinuity;
+    INT64 pts;
+    UINT64 duration;
+
+    /* NV12 scratch for non-NV12 YUV input */
+    BYTE *nv12;
+    size_t nv12_cap;
+
+    UINT32 frames;
+};
+
+static BOOL vconv_enabled(void)
+{
+    const char *v = getenv( "MADEIRA_WG_VCONV" );
+    return !(v && v[0] == '0');
+}
+
+static const MFVIDEOFORMAT *video_format( const struct wg_media_type *type )
+{
+    if (!type || !type->u.format) return NULL;
+    if (memcmp( &type->major, &madeira_MFMediaType_Video, sizeof(GUID) )) return NULL;
+    if (type->format_size < sizeof(MFVIDEOFORMAT)) return NULL;
+    return type->u.video;
+}
+
+/* MFVideoFormat_* subtype -> the parser core's pixel format.  RGB subtypes
+ * are D3DFMT values in Data1; YUV ones are FOURCCs.  IYUV is I420. */
+static enum mav_pixel_format vconv_pixel_format( const GUID *subtype )
+{
+    UINT tag;
+
+    if (!madeira_subtype_tag( subtype, &tag )) return MAV_PIX_UNKNOWN;
+    switch (tag)
+    {
+    case 0x3231564e: return MAV_PIX_NV12;   /* 'NV12' */
+    case 0x30323449:                        /* 'I420' */
+    case 0x56555949: return MAV_PIX_I420;   /* 'IYUV' */
+    case 0x32315659: return MAV_PIX_YV12;   /* 'YV12' */
+    case 0x32595559: return MAV_PIX_YUY2;   /* 'YUY2' */
+    case 22:         return MAV_PIX_BGRx;   /* D3DFMT_X8R8G8B8: MFVideoFormat_RGB32 */
+    case 21:         return MAV_PIX_BGRA;   /* D3DFMT_A8R8G8B8: MFVideoFormat_ARGB32 */
+    case 32:         return MAV_PIX_RGBA;   /* D3DFMT_A8B8G8R8: MFVideoFormat_ABGR32 */
+    default:         return MAV_PIX_UNKNOWN;
+    }
+}
+
+static const char *vconv_name( enum mav_pixel_format fmt )
+{
+    switch (fmt)
+    {
+    case MAV_PIX_NV12: return "nv12";
+    case MAV_PIX_I420: return "i420";
+    case MAV_PIX_YV12: return "yv12";
+    case MAV_PIX_YUY2: return "yuy2";
+    case MAV_PIX_BGRx: return "rgb32";
+    case MAV_PIX_BGRA: return "argb32";
+    case MAV_PIX_RGBA: return "abgr32";
+    default:           return "?";
+    }
+}
+
+static BOOL vconv_is_rgb( enum mav_pixel_format fmt )
+{
+    return fmt == MAV_PIX_BGRx || fmt == MAV_PIX_BGRA || fmt == MAV_PIX_RGBA;
+}
+
+/* The layout of one picture at plane-0 stride `stride`.  stride 0 means the
+ * default: for an INPUT picture the parser core's own layout (what the MF
+ * media source produced it with), for an OUTPUT picture the MF one, which
+ * differs only for NV12 (width rounded up to 2, as upstream wg_transform.c
+ * notes Windows expects).  Chroma planes follow the MF conventions for 2D
+ * buffers: NV12's CbCr plane has the luma pitch, I420/YV12's half of it. */
+static size_t vconv_layout( enum mav_pixel_format fmt, UINT32 w, UINT32 h, UINT32 stride,
+                            BOOL output, struct mav_layout *l )
+{
+    UINT32 min;
+
+    if (!mav_video_layout( fmt, w, h, l )) return 0;
+    if (!stride)
+    {
+        if (!output || fmt != MAV_PIX_NV12) return l->size;
+        stride = (w + 1) & ~1u;
+    }
+    min = vconv_is_rgb( fmt ) ? w * 4 : fmt == MAV_PIX_YUY2 ? w * 2 : w;
+    if (stride < min) return 0;
+    l->stride[0] = stride;
+    switch (fmt)
+    {
+    case MAV_PIX_NV12:
+        l->stride[1] = stride;
+        l->offset[1] = (size_t)stride * h;
+        l->size = l->offset[1] + (size_t)stride * l->chroma_height;
+        break;
+    case MAV_PIX_I420:
+    case MAV_PIX_YV12:
+        if (stride / 2 < (w + 1) / 2) return 0;
+        l->stride[1] = l->stride[2] = stride / 2;
+        l->offset[1] = (size_t)stride * h;
+        l->offset[2] = l->offset[1] + (size_t)l->stride[1] * l->chroma_height;
+        l->size = l->offset[2] + (size_t)l->stride[2] * l->chroma_height;
+        break;
+    default:
+        l->size = (size_t)stride * h;
+        break;
+    }
+    return l->size;
+}
+
+static BOOL vconv_reserve( BYTE **buf, size_t *cap, size_t size )
+{
+    BYTE *grown;
+
+    if (size <= *cap) return TRUE;
+    if (!(grown = realloc( *buf, size ))) return FALSE;
+    *buf = grown;
+    *cap = size;
+    return TRUE;
+}
+
+static struct vconv_transform *get_vconv( wg_transform_t handle )
+{
+    struct vconv_transform *transform = (struct vconv_transform *)(UINT_PTR)handle;
+
+    if (!transform || transform->magic != MADEIRA_VCONV_MAGIC) return NULL;
+    return transform;
+}
+
+static NTSTATUS vconv_set_output( struct vconv_transform *transform, const MFVIDEOFORMAT *out,
+                                  UINT32 out_size )
+{
+    enum mav_pixel_format fmt = vconv_pixel_format( &out->guidFormat );
+    MFVIDEOFORMAT *copy;
+
+    if (fmt == MAV_PIX_UNKNOWN)
+    {
+        VCONV_LOG( "output subtype %08x is not supported; refusing\n", (UINT)out->guidFormat.Data1 );
+        return STATUS_NOT_SUPPORTED;
+    }
+    if (out->videoInfo.dwWidth != transform->width || out->videoInfo.dwHeight != transform->height)
+    {
+        VCONV_LOG( "refusing %ux%u -> %ux%u: this converter does not scale\n",
+                   (UINT)transform->width, (UINT)transform->height,
+                   (UINT)out->videoInfo.dwWidth, (UINT)out->videoInfo.dwHeight );
+        return STATUS_NOT_SUPPORTED;
+    }
+    /* RGB in: only the same RGB format out (no RGB -> YUV path). */
+    if (vconv_is_rgb( transform->in_fmt ) && fmt != transform->in_fmt)
+    {
+        VCONV_LOG( "refusing %s -> %s: only YUV input is converted\n",
+                   vconv_name( transform->in_fmt ), vconv_name( fmt ) );
+        return STATUS_NOT_SUPPORTED;
+    }
+    if (!(copy = malloc( out_size ))) return STATUS_NO_MEMORY;
+    memcpy( copy, out, out_size );
+    free( transform->out_format );
+    transform->out_format = copy;
+    transform->out_format_size = out_size;
+    transform->out_fmt = fmt;
+    transform->out_flip = !!(out->videoInfo.VideoFlags & MFVideoFlag_BottomUpLinearRep);
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS vconv_create( struct wg_transform_create_params *params )
+{
+    const MFVIDEOFORMAT *in = video_format( &params->input_type );
+    const MFVIDEOFORMAT *out = video_format( &params->output_type );
+    struct vconv_transform *transform;
+    enum mav_pixel_format in_fmt;
+    NTSTATUS status;
+
+    if (!in || !out) return STATUS_NOT_SUPPORTED;
+    if (!vconv_enabled())
+    {
+        VCONV_LOG( "refused: MADEIRA_WG_VCONV=0\n" );
+        return STATUS_NOT_SUPPORTED;
+    }
+    if ((in_fmt = vconv_pixel_format( &in->guidFormat )) == MAV_PIX_UNKNOWN)
+    {
+        /* compressed (H.264, WMV...) or a raw format this port does not read */
+        VCONV_LOG( "input subtype %08x is not raw video this converter reads; refusing\n",
+                   (UINT)in->guidFormat.Data1 );
+        return STATUS_NOT_SUPPORTED;
+    }
+    if (!in->videoInfo.dwWidth || !in->videoInfo.dwHeight
+        || in->videoInfo.dwWidth > 16384 || in->videoInfo.dwHeight > 16384)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!(transform = calloc( 1, sizeof(*transform) ))) return STATUS_NO_MEMORY;
+    pthread_mutex_init( &transform->lock, NULL );
+    transform->magic = MADEIRA_VCONV_MAGIC;
+    transform->in_fmt = in_fmt;
+    transform->width = in->videoInfo.dwWidth;
+    transform->height = in->videoInfo.dwHeight;
+    transform->in_flip = !!(in->videoInfo.VideoFlags & MFVideoFlag_BottomUpLinearRep);
+    switch (in->videoInfo.TransferMatrix)
+    {
+    case MFVideoTransferMatrix_BT709: transform->bt709 = 1; break;
+    case MFVideoTransferMatrix_BT601: transform->bt709 = 0; break;
+    default: transform->bt709 = transform->height >= 720; break;  /* as the parser does */
+    }
+    transform->full_range = in->videoInfo.NominalRange == MFNominalRange_0_255;
+    transform->discontinuity = TRUE;
+
+    if ((status = vconv_set_output( transform, out, params->output_type.format_size )))
+    {
+        pthread_mutex_destroy( &transform->lock );
+        transform->magic = 0;
+        free( transform );
+        return status;
+    }
+
+    params->transform = (wg_transform_t)(UINT_PTR)transform;
+    VCONV_LOG( "created %s%s -> %s%s %ux%u bt%s %s range (transform %p)\n",
+               vconv_name( transform->in_fmt ), transform->in_flip ? " bottom-up" : "",
+               vconv_name( transform->out_fmt ), transform->out_flip ? " bottom-up" : "",
+               (UINT)transform->width, (UINT)transform->height, transform->bt709 ? "709" : "601",
+               transform->full_range ? "full" : "video", transform );
+    return STATUS_SUCCESS;
+}
+
+static void vconv_destroy( struct vconv_transform *transform )
+{
+    pthread_mutex_lock( &transform->lock );
+    VCONV_LOG( "destroyed after %u frames (transform %p)\n", transform->frames, transform );
+    transform->magic = 0;
+    free( transform->out_format );
+    free( transform->out_buf );
+    free( transform->nv12 );
+    pthread_mutex_unlock( &transform->lock );
+    pthread_mutex_destroy( &transform->lock );
+    free( transform );
+}
+
+/* Input YUV picture -> NV12 planes (top-down) in `planes`, using the scratch
+ * buffer when the input is not already top-down NV12. */
+static BOOL vconv_input_planes( struct vconv_transform *transform, const BYTE *data, size_t size,
+                                UINT32 stride, struct mav_vplanes *planes )
+{
+    UINT32 w = transform->width, h = transform->height, cw = (w + 1) / 2, ch = (h + 1) / 2, x, y;
+    struct mav_layout l;
+    size_t need;
+    BYTE *dy, *duv;
+
+#define SRC_ROW(plane, row, rows) (data + l.offset[plane] + (size_t)l.stride[plane] \
+                                   * (transform->in_flip ? (rows) - 1 - (row) : (row)))
+    if (!(need = vconv_layout( transform->in_fmt, w, h, stride, FALSE, &l )) || size < need) return FALSE;
+
+    planes->width = w;
+    planes->height = h;
+    planes->full_range = transform->full_range;
+    if (transform->in_fmt == MAV_PIX_NV12 && !transform->in_flip)
+    {
+        planes->y = data;
+        planes->uv = data + l.offset[1];
+        planes->y_stride = l.stride[0];
+        planes->uv_stride = l.stride[1];
+        return TRUE;
+    }
+
+    if (!vconv_reserve( &transform->nv12, &transform->nv12_cap, (size_t)w * h + (size_t)cw * 2 * ch ))
+        return FALSE;
+    dy = transform->nv12;
+    duv = dy + (size_t)w * h;
+    switch (transform->in_fmt)
+    {
+    case MAV_PIX_NV12:
+        for (y = 0; y < h; y++) memcpy( dy + (size_t)y * w, SRC_ROW( 0, y, h ), w );
+        for (y = 0; y < ch; y++) memcpy( duv + (size_t)y * cw * 2, SRC_ROW( 1, y, ch ), cw * 2 );
+        break;
+    case MAV_PIX_I420:
+    case MAV_PIX_YV12:
+    {
+        int u_plane = transform->in_fmt == MAV_PIX_I420 ? 1 : 2, v_plane = 3 - u_plane;
+        for (y = 0; y < h; y++) memcpy( dy + (size_t)y * w, SRC_ROW( 0, y, h ), w );
+        for (y = 0; y < ch; y++)
+        {
+            const BYTE *u = SRC_ROW( u_plane, y, ch ), *v = SRC_ROW( v_plane, y, ch );
+            BYTE *o = duv + (size_t)y * cw * 2;
+            for (x = 0; x < cw; x++)
+            {
+                o[2 * x] = u[x];
+                o[2 * x + 1] = v[x];
+            }
+        }
+        break;
+    }
+    case MAV_PIX_YUY2:
+        for (y = 0; y < h; y++)
+        {
+            const BYTE *s = SRC_ROW( 0, y, h );
+            BYTE *o = dy + (size_t)y * w;
+            for (x = 0; x < w; x++) o[x] = s[2 * x];
+            if (!(y & 1))
+            {
+                BYTE *c = duv + (size_t)(y / 2) * cw * 2;
+                for (x = 0; x < cw; x++)
+                {
+                    c[2 * x] = s[4 * x + 1];
+                    c[2 * x + 1] = s[4 * x + 3];
+                }
+            }
+        }
+        break;
+    default:
+        return FALSE;
+    }
+#undef SRC_ROW
+    planes->y = dy;
+    planes->uv = duv;
+    planes->y_stride = w;
+    planes->uv_stride = cw * 2;
+    return TRUE;
+}
+
+static NTSTATUS vconv_push( struct vconv_transform *transform, struct wg_sample *sample,
+                            const void *data, HRESULT *result )
+{
+    UINT32 w, h, out_stride;
+    struct mav_layout lo;
+    size_t out_size;
+
+    if (sample->size && !data) return STATUS_INVALID_PARAMETER;
+
+    pthread_mutex_lock( &transform->lock );
+    if (transform->out_pos < transform->out_len)
+    {
+        *result = MF_E_NOTACCEPTING;
+        pthread_mutex_unlock( &transform->lock );
+        return STATUS_SUCCESS;
+    }
+    w = transform->width;
+    h = transform->height;
+    out_stride = 0;     /* default layout; a 2D output buffer's pitch is applied at read */
+    if (!(out_size = vconv_layout( transform->out_fmt, w, h, out_stride, TRUE, &lo ))
+        || !vconv_reserve( &transform->out_buf, &transform->out_cap, out_size ))
+    {
+        pthread_mutex_unlock( &transform->lock );
+        return STATUS_NO_MEMORY;
+    }
+
+    if (vconv_is_rgb( transform->in_fmt ))
+    {
+        struct mav_layout li;
+        UINT32 y;
+        size_t need = vconv_layout( transform->in_fmt, w, h, sample->stride, FALSE, &li );
+
+        if (!need || sample->size < need)
+        {
+            VCONV_LOG( "push: %u bytes is less than one %ux%u %s picture (%zu); dropped\n",
+                       (UINT)sample->size, (UINT)w, (UINT)h, vconv_name( transform->in_fmt ), need );
+            *result = S_OK;
+            pthread_mutex_unlock( &transform->lock );
+            return STATUS_SUCCESS;
+        }
+        for (y = 0; y < h; y++)
+        {
+            UINT32 sy = transform->in_flip ? h - 1 - y : y, dy = transform->out_flip ? h - 1 - y : y;
+            memcpy( transform->out_buf + (size_t)dy * lo.stride[0],
+                    (const BYTE *)data + (size_t)sy * li.stride[0], (size_t)w * 4 );
+        }
+    }
+    else
+    {
+        struct mav_vplanes planes;
+        struct mav_stream s;
+
+        if (!vconv_input_planes( transform, data, sample->size, sample->stride, &planes ))
+        {
+            VCONV_LOG( "push: %u bytes (stride %u) is not one %ux%u %s picture; dropped\n",
+                       (UINT)sample->size, (UINT)sample->stride, (UINT)w, (UINT)h,
+                       vconv_name( transform->in_fmt ) );
+            *result = S_OK;
+            pthread_mutex_unlock( &transform->lock );
+            return STATUS_SUCCESS;
+        }
+        memset( &s, 0, sizeof(s) );
+        s.vout.fmt = transform->out_fmt;
+        s.vout.width = (int32_t)w;
+        s.vout.height = transform->out_flip ? -(int32_t)h : (int32_t)h;
+        s.bt709 = transform->bt709;
+        mav_convert_picture( &s, &planes, transform->out_buf, &lo );
+    }
+
+    transform->out_len = out_size;
+    transform->out_pos = 0;
+    transform->out_stride = lo.stride[0];
+    transform->have_pts = !!(sample->flags & WG_SAMPLE_FLAG_HAS_PTS);
+    transform->pts = sample->pts;
+    transform->have_duration = !!(sample->flags & WG_SAMPLE_FLAG_HAS_DURATION);
+    transform->duration = sample->duration;
+    if (sample->flags & WG_SAMPLE_FLAG_DISCONTINUITY) transform->discontinuity = TRUE;
+    if (!transform->frames++)
+        VCONV_LOG( "first picture: %u bytes in (stride %u) -> %zu bytes %s (transform %p)\n",
+                   (UINT)sample->size, (UINT)sample->stride, out_size,
+                   vconv_name( transform->out_fmt ), transform );
+    pthread_mutex_unlock( &transform->lock );
+    *result = S_OK;
+    return STATUS_SUCCESS;
+}
+
+/* Copies the waiting picture into the caller's buffer, re-laid at the
+ * caller's pitch when it has one (a 2D MF buffer or a D3D surface). */
+static NTSTATUS vconv_read( struct vconv_transform *transform, struct wg_sample *sample,
+                            void *data, HRESULT *result )
+{
+    struct mav_layout src, dst;
+    size_t dst_size;
+    unsigned int p, planes;
+
+    if (sample->max_size && !data) return STATUS_INVALID_PARAMETER;
+
+    pthread_mutex_lock( &transform->lock );
+    if (transform->out_pos >= transform->out_len)
+    {
+        sample->size = 0;
+        pthread_mutex_unlock( &transform->lock );
+        *result = MF_E_TRANSFORM_NEED_MORE_INPUT;
+        return STATUS_SUCCESS;
+    }
+
+    vconv_layout( transform->out_fmt, transform->width, transform->height, 0, TRUE, &src );
+    if (!(dst_size = vconv_layout( transform->out_fmt, transform->width, transform->height,
+                                   sample->stride, TRUE, &dst )))
+    {
+        VCONV_LOG( "read: stride %u is too small for %u %s pixels; using the default\n",
+                   (UINT)sample->stride, (UINT)transform->width, vconv_name( transform->out_fmt ) );
+        dst = src;
+        dst_size = src.size;
+    }
+    if (dst_size > sample->max_size)
+    {
+        /* Never a partial picture: the caller's buffer must hold it all. */
+        VCONV_LOG( "read: buffer of %u bytes cannot hold a %zu-byte picture\n",
+                   (UINT)sample->max_size, dst_size );
+        sample->size = 0;
+        pthread_mutex_unlock( &transform->lock );
+        *result = MF_E_BUFFERTOOSMALL;
+        return STATUS_SUCCESS;
+    }
+
+    if (dst.stride[0] == src.stride[0])
+        memcpy( data, transform->out_buf, src.size );
+    else
+    {
+        planes = transform->out_fmt == MAV_PIX_NV12 ? 2
+               : (transform->out_fmt == MAV_PIX_I420 || transform->out_fmt == MAV_PIX_YV12) ? 3 : 1;
+        for (p = 0; p < planes; p++)
+        {
+            UINT32 rows = p ? src.chroma_height : transform->height, row;
+            UINT32 bytes = src.stride[p] < dst.stride[p] ? src.stride[p] : dst.stride[p];
+            for (row = 0; row < rows; row++)
+                memcpy( (BYTE *)data + dst.offset[p] + (size_t)row * dst.stride[p],
+                        transform->out_buf + src.offset[p] + (size_t)row * src.stride[p], bytes );
+        }
+    }
+    sample->size = (UINT32)dst_size;
+
+    sample->flags &= ~(WG_SAMPLE_FLAG_INCOMPLETE | WG_SAMPLE_FLAG_HAS_PTS |
+                       WG_SAMPLE_FLAG_HAS_DURATION | WG_SAMPLE_FLAG_DISCONTINUITY);
+    sample->flags |= WG_SAMPLE_FLAG_SYNC_POINT;
+    if (transform->have_pts)
+    {
+        sample->flags |= WG_SAMPLE_FLAG_HAS_PTS;
+        sample->pts = transform->pts;
+    }
+    if (transform->have_duration)
+    {
+        sample->flags |= WG_SAMPLE_FLAG_HAS_DURATION;
+        sample->duration = transform->duration;
+    }
+    if (transform->discontinuity)
+    {
+        sample->flags |= WG_SAMPLE_FLAG_DISCONTINUITY;
+        transform->discontinuity = FALSE;
+    }
+    transform->out_pos = transform->out_len;
+    pthread_mutex_unlock( &transform->lock );
+    *result = S_OK;
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS vconv_get_output_type( struct vconv_transform *transform, struct wg_media_type *type )
+{
+    UINT32 size;
+
+    pthread_mutex_lock( &transform->lock );
+    size = transform->out_format_size;
+    type->major = madeira_MFMediaType_Video;
+    if (!type->u.format || type->format_size < size)
+    {
+        type->format_size = size;
+        pthread_mutex_unlock( &transform->lock );
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+    memcpy( type->u.format, transform->out_format, size );
+    type->format_size = size;
+    pthread_mutex_unlock( &transform->lock );
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS vconv_set_output_type( struct vconv_transform *transform, const struct wg_media_type *type )
+{
+    const MFVIDEOFORMAT *out = video_format( type );
+    NTSTATUS status;
+
+    if (!out) return STATUS_NOT_SUPPORTED;
+    pthread_mutex_lock( &transform->lock );
+    if (!(status = vconv_set_output( transform, out, type->format_size )))
+    {
+        /* a picture converted for the old format cannot be delivered */
+        transform->out_pos = transform->out_len = 0;
+        VCONV_LOG( "output type set to %s%s (transform %p)\n", vconv_name( transform->out_fmt ),
+                   transform->out_flip ? " bottom-up" : "", transform );
+    }
+    pthread_mutex_unlock( &transform->lock );
+    return status;
+}
+
+static void vconv_flush( struct vconv_transform *transform )
+{
+    pthread_mutex_lock( &transform->lock );
+    transform->out_pos = transform->out_len = 0;
+    transform->discontinuity = TRUE;
+    pthread_mutex_unlock( &transform->lock );
+}
+
+/***********************************************************************
  *           wg_transform_create
  */
 static NTSTATUS transform_create( struct wg_transform_create_params *params )
@@ -1620,10 +2214,14 @@ static NTSTATUS transform_create( struct wg_transform_create_params *params )
 
     params->transform = 0;
 
+    /* ml2300: raw video -> raw video (the video processor / colour converter). */
+    if (video_format( &params->input_type ) && video_format( &params->output_type ))
+        return vconv_create( params );
+
     if (!in || !out)
     {
-        /* Video, or a malformed block: winegstreamer's other transforms live
-         * here too and this port has no replacement for them. */
+        /* Compressed video, or a malformed block: winegstreamer's other
+         * transforms live here too and this port has no replacement for them. */
         return STATUS_NOT_SUPPORTED;
     }
 
@@ -1791,7 +2389,13 @@ fail:
 static NTSTATUS transform_destroy( wg_transform_t handle )
 {
     struct wma_transform *transform = get_transform( handle );
+    struct vconv_transform *vconv = get_vconv( handle );
 
+    if (vconv)
+    {
+        vconv_destroy( vconv );
+        return STATUS_SUCCESS;
+    }
     if (!transform) return STATUS_INVALID_HANDLE;
 
     pthread_mutex_lock( &transform->lock );
@@ -1828,8 +2432,10 @@ static NTSTATUS transform_push_data( wg_transform_t handle, struct wg_sample *sa
                                      const void *data, HRESULT *result )
 {
     struct wma_transform *transform = get_transform( handle );
+    struct vconv_transform *vconv = get_vconv( handle );
     NTSTATUS status;
 
+    if (vconv && sample) return vconv_push( vconv, sample, data, result );
     if (!transform || !sample) return STATUS_INVALID_HANDLE;
     /* No fake success: bytes with nowhere to read
      * them from is a caller bug, and quietly accepting them would look like a
@@ -1899,8 +2505,10 @@ static NTSTATUS transform_read_data( wg_transform_t handle, struct wg_sample *sa
                                      void *data, HRESULT *result )
 {
     struct wma_transform *transform = get_transform( handle );
+    struct vconv_transform *vconv = get_vconv( handle );
     size_t avail, copy, frames;
 
+    if (vconv && sample) return vconv_read( vconv, sample, data, result );
     if (!transform || !sample) return STATUS_INVALID_HANDLE;
     /* Consuming PCM into a buffer that does not exist would lose it silently. */
     if (sample->max_size && !data) return STATUS_INVALID_PARAMETER;
@@ -1965,8 +2573,10 @@ static NTSTATUS transform_read_data( wg_transform_t handle, struct wg_sample *sa
 static NTSTATUS transform_get_output_type( wg_transform_t handle, struct wg_media_type *type )
 {
     struct wma_transform *transform = get_transform( handle );
+    struct vconv_transform *vconv = get_vconv( handle );
     UINT32 size;
 
+    if (vconv) return vconv_get_output_type( vconv, type );
     if (!transform) return STATUS_INVALID_HANDLE;
 
     pthread_mutex_lock( &transform->lock );
@@ -1996,6 +2606,7 @@ static NTSTATUS transform_set_output_type( wg_transform_t handle, const struct w
     BYTE *copy;
     UINT tag;
 
+    if (get_vconv( handle )) return vconv_set_output_type( get_vconv( handle ), type );
     if (!transform) return STATUS_INVALID_HANDLE;
     if (!out) return STATUS_NOT_SUPPORTED;
 
@@ -2099,7 +2710,15 @@ static NTSTATUS wma_transform_get_status( void *args )
 {
     struct wg_transform_get_status_params *params = args;
     struct wma_transform *transform = get_transform( params->transform );
+    struct vconv_transform *vconv = get_vconv( params->transform );
 
+    if (vconv)
+    {
+        pthread_mutex_lock( &vconv->lock );
+        params->accepts_input = vconv->out_pos >= vconv->out_len;
+        pthread_mutex_unlock( &vconv->lock );
+        return STATUS_SUCCESS;
+    }
     if (!transform) return STATUS_INVALID_HANDLE;
     pthread_mutex_lock( &transform->lock );
     params->accepts_input = (transform->pcm_len == transform->pcm_pos);
@@ -2112,6 +2731,8 @@ static NTSTATUS wma_transform_drain( void *args )
     struct wma_transform *transform = get_transform( *(wg_transform_t *)args );
     NTSTATUS status;
 
+    /* a converter holds at most one finished picture, which stays readable */
+    if (get_vconv( *(wg_transform_t *)args )) return STATUS_SUCCESS;
     if (!transform) return STATUS_INVALID_HANDLE;
     pthread_mutex_lock( &transform->lock );
     WMA_LOG( "drain: transform=%p after %u packets\n", transform, transform->packet_count );
@@ -2140,7 +2761,13 @@ static NTSTATUS wma_transform_drain( void *args )
 static NTSTATUS wma_transform_flush( void *args )
 {
     struct wma_transform *transform = get_transform( *(wg_transform_t *)args );
+    struct vconv_transform *vconv = get_vconv( *(wg_transform_t *)args );
 
+    if (vconv)
+    {
+        vconv_flush( vconv );
+        return STATUS_SUCCESS;
+    }
     if (!transform) return STATUS_INVALID_HANDLE;
     pthread_mutex_lock( &transform->lock );
     report_failures( transform );

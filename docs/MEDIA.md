@@ -26,7 +26,7 @@ Foundation source) is refused as before unless `MADEIRA_WG_64BIT=1`.
 
 | File | What it is |
 |---|---|
-| `build/ntdll-unix/winegstreamer_unixlib_ios.c` | Both unix call tables (entry for entry with `dlls/winegstreamer/unixlib.h`), the wow64 thunks, and the `wg_transform` subset `wma_decoder.c` uses, on libavcodec: WMA v1/v2/Pro/Lossless and XMA1/2 only. Other transforms (AAC, H.264, WMV, resampler, colour converter) are refused at create, and `wg_muxer` returns `STATUS_NOT_IMPLEMENTED`. |
+| `build/ntdll-unix/winegstreamer_unixlib_ios.c` | Both unix call tables (entry for entry with `dlls/winegstreamer/unixlib.h`), the wow64 thunks, and the `wg_transform` subset `wma_decoder.c` uses, on libavcodec: WMA v1/v2/Pro/Lossless and XMA1/2, plus a raw-video colour converter (NV12, I420, IYUV, YV12, YUY2 to those and to RGB32/ARGB32/ABGR32, same size, with flips and caller strides) for Wine's video processor and colour converter MFTs. Other transforms (AAC, H.264, WMV, resampler, scaling) are refused at create, and `wg_muxer` returns `STATUS_NOT_IMPLEMENTED`. |
 | `build/ntdll-unix/wg_parser_av_ios.c` | The `wg_parser` core, `#include`d by the file above: the PE read thread's pull protocol as an AVIOContext, libavformat demux (mp3, wav, mov), MPEG audio / PCM decode through libavcodec + libswresample, a packet queue, B-frame reordering, keyframe seek with exact trim, and conversion to the formats `quartz_parser.c` / `media_source.c` ask for. |
 | `build/ntdll-unix/wg_parser_apple_ios.c` | H.264/HEVC on VideoToolbox (NV12 out) and AAC on an AudioToolbox AudioConverter (float PCM out). Its own translation unit with no Wine or FFmpeg header. |
 | `build/ntdll-unix/wg_parser_backend_ios.h` | The contract between the core and a decoder backend; plain C types only, so the host test can supply stub backends. |
@@ -56,10 +56,11 @@ Environment variables (`env.NAME = value` in `madeira.cfg`):
 | `MADEIRA_WG_PARSER` | on | `0`: `wg_parser_create` returns `STATUS_NOT_IMPLEMENTED` again, as before this series; quartz and the MF source then fail the way they did. The WMA decoder is unaffected. |
 | `MADEIRA_WG_VIDEO` | on | `0`: MP3/WAV only; an MP4/MOV is refused at connect. |
 | `MADEIRA_WG_VIDEO_FORMAT` | `nv12` | Native format a video stream reports: `nv12`, `i420`, `yv12`, `yuy2`, `rgb32`, `argb32` or `abgr32`. |
+| `MADEIRA_WG_VCONV` | on | `0`: refuse raw-video transforms again, so the video processor and colour converter MFTs fail to create as before. Unity's video player (Planet Crafter's loading video) needs them when a game asks for RGB frames. |
 | `MADEIRA_WMA_SEARCH` | on | `0`: keep the WMA v1/v2 decoder at the bit rate and flags it opened with; no search over other candidates when a bit-reservoir stream fails. A packet that fails is concealed with silence of its length and the next one is decoded as usual. (An xWMA stream still opens at the rate libavformat's xWMA table normalises to.) |
 | `MADEIRA_WMA_DUMP` | off | Set: write each WMA decoder's input to `wma-dump-<n>.bin` in the Documents folder, for reproducing a decode failure on a host. |
 
-Log tags: `[wma]` for the decoder, `[wg-parser]` for the parser; both are
+Log tags: `[wma]` for the decoder, `[vconv]` for the colour converter, `[wg-parser]` for the parser; both are
 rate-limited per process (`MADEIRA_DIAG=1` lifts the `[wma]` cap).
 
 ## Tests
@@ -79,6 +80,13 @@ rate-limited per process (`MADEIRA_DIAG=1` lifts the `[wma]` cap).
   right level and fundamental back. Also checks that 64-bit callers keep the
   stub table by default. Bit-reservoir (superframe) streams are not covered:
   FFmpeg cannot encode them.
+- `tests/host/check-video-convert.py` (same requirements as the WMA test):
+  drives the raw-video colour converter through the `wg_transform` entries the
+  way `video_processor.c` does, NV12/I420/IYUV/YV12/YUY2 in, every supported
+  format out, with bottom-up pictures, caller pitches, back-pressure, a buffer
+  too small and timestamps, checks every pixel against BT.601/BT.709, and
+  checks the refusals (scaling, compressed input, RGB to YUV,
+  `MADEIRA_WG_VCONV=0`).
 - `tests/x86/wma-x86.c` (`build-wma-test.sh`): a 32-bit program that
   reaches the WMA decoder exactly as FAudio does and checks that the decoded
   PCM has the 440 Hz fundamental it was encoded from. Exit 62 pass, 63 decode

@@ -11,6 +11,8 @@
 #import "SwiftSteam/lzma_shim.h"
 // liblzma for .7z mods (ModArchives.swift).
 #import "ModArchiveLZMA.h"
+// itch.io .7z downloads (ItchArchive.swift): a streaming 7z reader over liblzma and zlib.
+#import "SwiftItch/itch_7z.h"
 // On-device remote pairing for Built-in StikJIT (build/rppairing-ios, JITPairing.swift).
 #import "MadeiraRPPairing.h"
 // madeira-bcd: the bundled prefix template, read by the Dock's Reset (DockReset.swift).

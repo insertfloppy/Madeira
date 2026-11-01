@@ -397,6 +397,7 @@ jobs:
           python3 tests/host/check-steam-missing-program.py
           python3 tests/host/check-steam-dlc-list.py
           python3 tests/host/check-real-suspend-game.py
+          python3 tests/host/check-itch-7z.py
 
       - name: Host check for the starting screen (does not block the IPA)
         continue-on-error: true

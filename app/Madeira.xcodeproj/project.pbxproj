@@ -25,6 +25,7 @@
 		A1007B01 /* LauncherSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2007B01 /* LauncherSupport.swift */; };
 		A1007B02 /* SwiftItch/ItchAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2007B02 /* ItchAPI.swift */; };
 		A1007B03 /* SwiftItch/ItchArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2007B03 /* ItchArchive.swift */; };
+		A1007B30 /* SwiftItch/itch_7z.c in Sources */ = {isa = PBXBuildFile; fileRef = A2007B30 /* itch_7z.c */; };
 		A1007B04 /* ItchLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2007B04 /* ItchLibrary.swift */; };
 		A1007B05 /* ItchGames.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2007B05 /* ItchGames.swift */; };
 		A1007B21 /* LauncherGames.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2007B21 /* LauncherGames.swift */; };
@@ -287,6 +288,8 @@
 		A2007B01 /* LauncherSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LauncherSupport.swift"; sourceTree = "<group>"; };
 		A2007B02 /* ItchAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftItch/ItchAPI.swift"; sourceTree = "<group>"; };
 		A2007B03 /* ItchArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftItch/ItchArchive.swift"; sourceTree = "<group>"; };
+		A2007B30 /* itch_7z.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "SwiftItch/itch_7z.c"; sourceTree = "<group>"; };
+		A2007B31 /* itch_7z.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "SwiftItch/itch_7z.h"; sourceTree = "<group>"; };
 		A2007B04 /* ItchLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ItchLibrary.swift"; sourceTree = "<group>"; };
 		A2007B05 /* ItchGames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ItchGames.swift"; sourceTree = "<group>"; };
 		A2007B21 /* LauncherGames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LauncherGames.swift"; sourceTree = "<group>"; };
@@ -597,6 +600,8 @@
 				A2007B01 /* LauncherSupport.swift */,
 				A2007B02 /* ItchAPI.swift */,
 				A2007B03 /* ItchArchive.swift */,
+				A2007B30 /* itch_7z.c */,
+				A2007B31 /* itch_7z.h */,
 				A2007B04 /* ItchLibrary.swift */,
 				A2007B05 /* ItchGames.swift */,
 				A2007B21 /* LauncherGames.swift */,
@@ -1037,6 +1042,7 @@
 				A1007B01 /* LauncherSupport.swift in Sources */,
 				A1007B02 /* SwiftItch/ItchAPI.swift in Sources */,
 				A1007B03 /* SwiftItch/ItchArchive.swift in Sources */,
+				A1007B30 /* SwiftItch/itch_7z.c in Sources */,
 				A1007B04 /* ItchLibrary.swift in Sources */,
 				A1007B05 /* ItchGames.swift in Sources */,
 				A1007B21 /* LauncherGames.swift in Sources */,

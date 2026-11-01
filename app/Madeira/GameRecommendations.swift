@@ -322,9 +322,17 @@ enum GameRecommendations {
     /// GTA V Enhanced started from its own PlayGTAV.exe outside a Steam
     /// library (Rockstar Games Launcher or another store; build 451). Version 2:
     /// the same orphan-lock reaper mode as the Steam copy (its launcher and
-    /// Social Club too).
+    /// Social Club too). Version 3 (2026-11-01, an Epic copy on device, from an empty
+    /// Rockstar folder to the launcher's own window): it starts in the Wine desktop, where
+    /// the launcher installer's service starts on demand (sechost, env.MADEIRA_SCM_ON_DEMAND)
+    /// and Epic copies start under EpicGamesLauncher.exe (no services batch: it would bypass
+    /// that parent and write the Epic sign-in arguments to disk). The launcher installer's
+    /// VC++ redistributable is not started (the 32-bit setup crashed the session). Social
+    /// Club's libcef.dll runs without a JIT-pool copy (the Steam list's pool and image lines;
+    /// the pool ran out, error 17), its browser draws without the GPU and DXCore is off
+    /// (its GPU thread crashed in Wine's DXCore stub, error 17 again).
     static let gta5EnhancedOther = GameRecommendation(
-        id: "gta5e-other", title: "GTA V Enhanced (outside Steam)", version: 2,
+        id: "gta5e-other", title: "GTA V Enhanced (outside Steam)", version: 3,
         config: """
         # Madeira's recommended settings for GTA V Enhanced outside Steam (Rockstar Games Launcher or another store).
         # Reset to Recommended, at the bottom of the game's settings, brings them back.
@@ -345,13 +353,28 @@ enum GameRecommendations {
         env.FEX_VECTORTSOENABLED = 0
         env.MADEIRA_DEVICE_STATS = 1
         env.MADEIRA_EC_HOOK_TRACE = 0
+        pool-low = 1
+        pool-page-fit = 1
+        env.MADEIRA_X64_IMAGE_NOCOPY = 1
+        env.MADEIRA_POOL_LOW_IMAGES = 1
+        env.MADEIRA_POOL_RECYCLE_IMAGES = 1
+        env.MADEIRA_POOL_HEAD_RESERVE_MB = 128
+        env.MADEIRA_EXECREQ_LEAVE = 1
+        env.MADEIRA_PIN_GRAPHICS_DLLS = 1
+        env.MADEIRA_X64_GRAPHICS_ENTRY = 1
+        env.MADEIRA_WOW_MIN_FREE_GB = 2
+        env.DXMT_SMALL_RINGS = Launcher.exe;SocialClubHelper.exe
+        env.MADEIRA_SPAWN_BLOCK = RockstarErrorHandler;VCRed\\vc_redist;.be\\vc_redist
+        env.MADEIRA_SC_CEF_FLAGS = --disable-gpu --disable-gpu-compositing
+        env.WINEDLLOVERRIDES = dxcore=;video64=
         # madeira-bcd's defaults, which this list was tested with (upstream's differ).
         env.MADEIRA_FREE_DELAY_MS = 2000
         env.MADEIRA_CTX_CPU_AREA = 2
         env.MADEIRA_WAIT_CHILDREN = 1
         env.MADEIRA_JIT_DUMP = 0
         """,
-        avx: false, nvidia: true, wineVCRT: false, fastSync: true, resolution: "1280x720", display: "fit")
+        avx: false, nvidia: true, wineVCRT: false, fastSync: true, resolution: "1280x720", display: "fit",
+        launchMode: "desktop")
 
     /// Ghost of Tsushima (build 336: DualSense input, rumble, triggers and light work).
     /// Build 492 adds Horizon Zero Dawn's proven fix for typed buffer views that

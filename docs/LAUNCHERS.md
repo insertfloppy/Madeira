@@ -119,6 +119,10 @@ The home page then drew at 60 FPS. `pool-split` gives the games Battle.net start
 a bigger JIT pool. A 64-bit game started by 32-bit Battle.net.exe (StarCraft) used
 to resolve its parent's guest window while it booted and closed the app; the
 child's boot thread now resolves none ([child-64-boot], loader_ios.c).
+StarCraft's ClientSdk.dll unmaps itself and maps a section at its own base; naming
+that module under virtual_mutex faulted, the exception thread waited for the same
+lock and the whole session froze. The name is now read with checked reads, and the
+fault handler waits at most 2 s for the lock ([fault-deadlock], virtual_ios.c).
 
 ## Ubisoft repairs
 

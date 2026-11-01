@@ -18,6 +18,36 @@ struct ExternalFolder: Codable, Identifiable {
     /// Madeira's Steam downloads go to <folder>/SteamLibrary on this drive.
     var steamInstalls: Bool? = nil
     var libraryID: String? = nil
+    /// Where the folder was when it was added, and a sandbox extension for it.
+    /// A copy signed with an App ID that differs from its bundle ID gets the
+    /// folder for one launch only (its bookmark is refused on the next one), so
+    /// the extension is the way back in after Madeira is reopened.
+    var path: String? = nil
+    var token: String? = nil
+}
+
+/// Sandbox extensions (libsystem_sandbox, the same calls WKWebView uses to hand
+/// file access to its web process). While Madeira can reach a folder it can
+/// issue a token for it; consuming the token in a later launch opens the folder
+/// again without the bookmark. Tokens last until the phone restarts.
+enum FolderExtension {
+    private typealias Issue = @convention(c) (UnsafePointer<CChar>, UnsafePointer<CChar>, UInt32) -> UnsafeMutablePointer<CChar>?
+    private typealias Consume = @convention(c) (UnsafePointer<CChar>) -> Int64
+    private static let handle = UnsafeMutableRawPointer(bitPattern: -2) // RTLD_DEFAULT
+
+    static func issue(_ path: String) -> String? {
+        guard let sym = dlsym(handle, "sandbox_extension_issue_file") else { return nil }
+        let fn = unsafeBitCast(sym, to: Issue.self)
+        guard let raw = fn("com.apple.app-sandbox.read-write", path, 0) else { return nil }
+        defer { free(raw) }
+        let token = String(cString: raw)
+        return token.isEmpty || token.utf8.count > 4096 ? nil : token
+    }
+
+    static func consume(_ token: String) -> Bool {
+        guard let sym = dlsym(handle, "sandbox_extension_consume") else { return false }
+        return unsafeBitCast(sym, to: Consume.self)(token) >= 0
+    }
 }
 
 final class ExternalDrives: ObservableObject {
@@ -67,7 +97,8 @@ final class ExternalDrives: ObservableObject {
             guard try ExternalStoragePath.components(folder.name) == [folder.name],
                   folder.letter.count == 1, "defghijklmnopqrstuvwxy".contains(folder.letter),
                   !folder.bookmark.isEmpty, folder.bookmark.count <= 1 << 20,
-                  folder.libraryID == nil || UUID(uuidString: folder.libraryID!) != nil else { throw ExternalStorageError.invalidRecord }
+                  folder.libraryID == nil || UUID(uuidString: folder.libraryID!) != nil,
+                  (folder.path?.utf8.count ?? 0) <= 4096, (folder.token?.utf8.count ?? 0) <= 4096 else { throw ExternalStorageError.invalidRecord }
         }
     }
 
@@ -129,9 +160,15 @@ final class ExternalDrives: ObservableObject {
                     try Self.validateRoot(url, identity: folder.libraryID)
                     try link(folder, to: url, owned: true)
                     if stale { next[i].bookmark = try url.bookmarkData() }
+                    if let token = FolderExtension.issue(url.path) { next[i].path = url.path; next[i].token = token }
                     mounted[folder.id] = url
                 } catch { url.stopAccessingSecurityScopedResource(); throw error }
             } catch {
+                if let url = reopenWithToken(folder) {
+                    mounted[folder.id] = url
+                    if let token = FolderExtension.issue(url.path) { next[i].token = token }
+                    continue
+                }
                 LogStore.shared.log("[external] \(folder.name) unavailable: \(error.localizedDescription)")
                 unlink(folder)
             }
@@ -140,6 +177,25 @@ final class ExternalDrives: ObservableObject {
         publishOpened()
         refreshSteam()
         SteamOwnedLibrary.shared.externalStorageReconnected()
+    }
+
+    /// The second way back into a folder whose bookmark was refused: the
+    /// sandbox extension saved while it was open. Logs how far it got.
+    @MainActor private func reopenWithToken(_ folder: ExternalFolder) -> URL? {
+        guard let path = folder.path, let token = folder.token else { return nil }
+        let consumed = FolderExtension.consume(token)
+        let url = URL(fileURLWithPath: path, isDirectory: true)
+        let listable = (try? FileManager.default.contentsOfDirectory(atPath: path)) != nil
+        do {
+            guard consumed, listable else { throw ExternalStorageError.unavailable }
+            try Self.validateRoot(url, identity: folder.libraryID)
+            try link(folder, to: url, owned: true)
+            LogStore.shared.log("[external] \(folder.name) reopened with its saved access")
+            return url
+        } catch {
+            LogStore.shared.log("[external] \(folder.name) saved access failed: consumed=\(consumed ? 1 : 0) listable=\(listable ? 1 : 0) \(error.localizedDescription)")
+            return nil
+        }
     }
 
     /// Finds the Steam libraries on the opened drives, makes the chosen download
@@ -243,6 +299,9 @@ final class ExternalDrives: ObservableObject {
         let base = name; var n = 2
         while folders.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { name = "\(base) \(n)"; n += 1 }
         var folder = ExternalFolder(name: name, letter: letter, bookmark: bookmark)
+        folder.token = FolderExtension.issue(url.path)
+        if folder.token != nil { folder.path = url.path }
+        LogStore.shared.log("[external] saved access for \(name): \(folder.token != nil ? 1 : 0)")
         do {
             guard !mounted.values.contains(where: { $0.resolvingSymlinksInPath() == url.resolvingSymlinksInPath() }) else {
                 throw LibraryError.message("That folder is already registered.")
@@ -264,15 +323,17 @@ final class ExternalDrives: ObservableObject {
 
     /// Forgets a folder. Its files stay on the drive; the library entries that
     /// start programs on it (and its Steam games' entries) are removed.
-    @MainActor func remove(_ id: UUID) {
+    /// A folder that is not connected can always go: nothing can be using it (the
+    /// automatic cloud check at start-up used to block this, so Remove did nothing).
+    @MainActor func remove(_ id: UUID) throws {
         guard let folder = folders.first(where: { $0.id == id }) else { return }
-        guard wine_process_is_running() == 0, GameMover.shared.moving == nil,
-              !SteamOwnedLibrary.shared.hasStorageWork else {
+        guard mounted[id] == nil || (wine_process_is_running() == 0 && GameMover.shared.moving == nil &&
+              !SteamOwnedLibrary.shared.hasStorageWork) else {
             LogStore.shared.log("[external] drive kept while a game, download or cloud operation uses storage")
-            return
+            throw LibraryError.message("\(folder.name) is in use by a game, a download or a cloud save check. Try again when it has finished.")
         }
         do { try save(folders.filter { $0.id != id }) }
-        catch { LogStore.shared.log("[external] drive registration could not be removed"); return }
+        catch { LogStore.shared.log("[external] drive registration could not be removed"); throw error }
         let prefix = "External/\(folder.name)/"
         let library = LibraryModel.shared
         for entry in library.entries where entry.relativePath.hasPrefix(prefix) {
@@ -423,8 +484,8 @@ struct ExternalGamesSheet: View {
 /// Settings › External drives.
 struct ExternalDrivesSection: View {
     @ObservedObject private var drives = ExternalDrives.shared
-    @State private var picking = false
     @State private var error: String?
+    @State private var dropTarget = false
     @State private var scanning: ExternalFolder?
     @State private var removing: ExternalFolder?
 
@@ -442,7 +503,13 @@ struct ExternalDrivesSection: View {
                     Button("Find games on \(folder.name)") { scanning = folder }
                 }
             }
-            Button("Add drive or folder") { picking = true }
+            Button("Add drive or folder") { ExternalFolderPicker.shared.start(added) }
+                // Anything is let in so the log shows every drop; dropped() picks the folder out.
+                .onDrop(of: [.folder, .directory, .item], isTargeted: $dropTarget) { providers in
+                    guard let provider = providers.first else { return false }
+                    ExternalFolderPicker.shared.dropped(provider, done: added, failed: { error = $0 })
+                    return true
+                }
             if !drives.folders.isEmpty {
                 Picker("Install Steam games on", selection: Binding(
                     get: { drives.folders.first { $0.steamInstalls == true }?.id },
@@ -455,23 +522,737 @@ struct ExternalDrivesSection: View {
         } header: { Text("External drives") } footer: {
             Text("Pick a folder on a USB or SSD drive, or a whole drive that already has games on it. Windows sees it as a drive letter and as C:\\External\\<name>. Find games adds the games on it to the library; Steam libraries on it (steamapps or SteamLibrary) show up in the Steam section. Install Steam games on picks where new Steam downloads go by default (each install can still pick another place); on a drive they go into <name>\\SteamLibrary. Unplugging the drive while a game runs will close it. Restart Madeira after adding a folder for Windows to list the new drive.")
         }
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
-            do {
-                try drives.add(try result.get()); error = nil
-                SteamGamesModel.shared.refresh()
-                // Offer the games already on it.
-                scanning = drives.folders.last
-            } catch { self.error = error.localizedDescription }
-        }
         .confirmationDialog("Remove \(removing?.name ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
                             titleVisibility: .visible, presenting: removing) { folder in
-            Button("Remove", role: .destructive) { drives.remove(folder.id) }
+            Button("Remove", role: .destructive) {
+                do { try drives.remove(folder.id); error = nil } catch { self.error = error.localizedDescription }
+            }
         } message: { _ in
             Text("Madeira forgets this drive and removes its games from the library. The files on the drive are kept.")
         }
         .sheet(item: $scanning) { folder in
             if let root = drives.mounted[folder.id] { ExternalGamesSheet(folder: folder, root: root.resolvingSymlinksInPath()) }
         }
+        .onAppear { ExternalFolderPicker.shared.installWindowDrop() }
+        .onChange(of: dropTarget) { _, over in if over { LogStore.shared.log("[external] something is being dragged over Add drive or folder") } }
+    }
+
+    private func added(_ url: URL) {
+        do {
+            try drives.add(url); error = nil
+            SteamGamesModel.shared.refresh()
+            // Offer the games already on it.
+            scanning = drives.folders.last
+        } catch { self.error = error.localizedDescription }
+    }
+}
+
+/// Settings › External drives' folder picker. Madeira presents it itself, not
+/// through SwiftUI's fileImporter, so FolderPickerSigning can fix the picker up
+/// before it is shown and the log can tell Cancel apart from a pick.
+@MainActor final class ExternalFolderPicker: NSObject, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate,
+                                          UIDropInteractionDelegate {
+    static let shared = ExternalFolderPicker()
+    private var done: (@MainActor (URL) -> Void)?
+
+    /// Add drive or folder. A copy signed with an App ID other than its bundle ID
+    /// cannot take a folder from the picker on iOS 27.2 (builds 47 to 58), so it
+    /// gets the drop screen, which can still open the picker.
+    func start(_ done: @escaping @MainActor (URL) -> Void) {
+        guard FolderPickerSigning.signedAppID != nil else { present(done); return }
+        guard let top = Self.topController() else {
+            LogStore.shared.log("[external] drop screen: no window to show it from")
+            return
+        }
+        let screen = FolderDropController(done: done, pick: { [weak self] in self?.present(done) })
+        LogStore.shared.log("[external] drop screen shown (signed App ID differs from the bundle ID)")
+        top.present(UINavigationController(rootViewController: screen), animated: true)
+    }
+
+    static func topController() -> UIViewController? {
+        guard var top = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+            .flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController else { return nil }
+        while let next = top.presentedViewController, !next.isBeingDismissed { top = next }
+        return top
+    }
+
+    func present(_ done: @escaping @MainActor (URL) -> Void) {
+        guard var top = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+            .flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController else {
+            LogStore.shared.log("[external] folder picker: no window to show it from")
+            return
+        }
+        while let next = top.presentedViewController, !next.isBeingDismissed { top = next }
+        // Before the picker exists: iOS fills in its configuration when it is created.
+        FolderPickerSigning.willPick()
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
+        picker.allowsMultipleSelection = false
+        picker.delegate = self
+        FolderPickerSigning.prepare(picker)
+        self.done = done
+        top.present(picker, animated: true) {
+            picker.presentationController?.delegate = self
+            FolderPickerSigning.report(picker, stage: "shown")
+        }
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        if let staging = exporting {
+            exporting = nil
+            exported(urls, staging: staging)
+            return
+        }
+        FolderPickerSigning.didPick(.picked)
+        if let url = urls.first { done?(url) }
+        done = nil
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        if exporting != nil { LogStore.shared.log("[external] anchor folder: cancelled") }
+        else { FolderPickerSigning.didPick(.cancelled) }
+        exporting = nil
+        done = nil
+    }
+
+    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        if exporting != nil { LogStore.shared.log("[external] anchor folder: swiped away") }
+        else { FolderPickerSigning.didPick(.swipedAway) }
+        exporting = nil
+        done = nil
+    }
+
+    /// The folder being moved onto a drive by the export picker, while it is open.
+    private var exporting: URL?
+    static let anchorName = "Madeira Games"
+
+    /// A way in that does not open anything: the picker's export (move) mode writes a
+    /// new, empty "Madeira Games" folder onto the drive and hands back where it went.
+    /// Opening is what iOS refuses to a copy signed with another App ID (builds 47 to
+    /// 60); moving goes the other way, so it may still hand over the new folder.
+    /// Game folders moved into it in the Files app are then inside a folder Madeira has.
+    func presentAnchor(_ done: @escaping @MainActor (URL) -> Void) {
+        guard let top = Self.topController() else { return }
+        let fm = FileManager.default
+        let staging = fm.temporaryDirectory.appendingPathComponent("anchor-" + UUID().uuidString, isDirectory: true)
+        let folder = staging.appendingPathComponent(Self.anchorName, isDirectory: true)
+        do {
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data("Madeira can reach everything in this folder. Move game folders into it in the Files app.\n".utf8)
+                .write(to: folder.appendingPathComponent("About this folder.txt"))
+        } catch {
+            LogStore.shared.log("[external] anchor folder: could not make it: \(error.localizedDescription)")
+            return
+        }
+        let picker = UIDocumentPickerViewController(forExporting: [folder], asCopy: false)
+        picker.delegate = self
+        self.done = done
+        exporting = staging
+        LogStore.shared.log("[external] anchor folder: export picker shown")
+        top.present(picker, animated: true) { picker.presentationController?.delegate = self }
+    }
+
+    private func exported(_ urls: [URL], staging: URL) {
+        let done = self.done
+        self.done = nil
+        defer { try? FileManager.default.removeItem(at: staging) }
+        guard let url = urls.first else {
+            LogStore.shared.log("[external] anchor folder: picker returned no URL")
+            Self.tell("iOS did not say where the folder went.")
+            return
+        }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let listed = (try? FileManager.default.contentsOfDirectory(atPath: url.path)).map { "\($0.count)" } ?? "no"
+        LogStore.shared.log("[external] anchor folder: moved, urls=\(urls.count) scoped=\(scoped ? 1 : 0)"
+            + " copy=\(Self.isOurCopy(url) ? 1 : 0) listable=\(listed) name=\(url.lastPathComponent == Self.anchorName ? 1 : 0)")
+        guard !Self.isOurCopy(url) else { Self.tell("iOS kept the folder inside Madeira instead of moving it."); return }
+        done?(url)
+    }
+
+    /// Edit › Paste: a folder copied in the Files app (press and hold, Copy). The
+    /// pasteboard hands items over on its own path, separate from drag and drop.
+    func pasteFolder(done: @escaping @MainActor (URL) -> Void, failed: @escaping @MainActor (String) -> Void) {
+        let providers = UIPasteboard.general.itemProviders
+        LogStore.shared.log("[external] paste: items=\(providers.count)")
+        guard let provider = providers.first else {
+            failed("Nothing is copied. In the Files app, press and hold the folder, tap Copy, then come back and tap Paste.")
+            return
+        }
+        dropped(provider, done: done, failed: failed)
+    }
+
+    /// A second drop target on the whole window, under every SwiftUI view: Form rows
+    /// may never hand a drop to SwiftUI's onDrop, and build 50's log showed a folder
+    /// dragged onto Add drive or folder never reaching it. Installed once, when the
+    /// External drives settings first show; a folder dropped anywhere in Madeira is
+    /// then added as a drive.
+    private var windowDrop: UIDropInteraction?
+
+    func installWindowDrop() {
+        guard windowDrop == nil, let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+            .flatMap(\.windows).first(where: \.isKeyWindow) else { return }
+        let interaction = UIDropInteraction(delegate: self)
+        window.addInteraction(interaction)
+        windowDrop = interaction
+        LogStore.shared.log("[external] window drop target installed")
+    }
+
+    private static let folderTypes = [UTType.folder.identifier, UTType.directory.identifier]
+
+    func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
+        let types = session.items.flatMap { $0.itemProvider.registeredTypeIdentifiers }
+        LogStore.shared.log("[external] drag entered the window, types: \(types.joined(separator: ","))")
+        return session.hasItemsConforming(toTypeIdentifiers: Self.folderTypes)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
+        UIDropProposal(operation: session.hasItemsConforming(toTypeIdentifiers: Self.folderTypes) ? .copy : .forbidden)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: UIDropSession) {
+        LogStore.shared.log("[external] drag over the window ended")
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
+        LogStore.shared.log("[external] folder dropped on the window")
+        guard let provider = session.items.first?.itemProvider else { return }
+        dropped(provider, done: { url in
+            do {
+                try ExternalDrives.shared.add(url)
+                SteamGamesModel.shared.refresh()
+            } catch { Self.tell(error.localizedDescription) }
+        }, failed: { Self.tell($0) })
+    }
+
+    /// The drop has no settings row to show an error under, so it gets an alert.
+    private static func tell(_ message: String) {
+        LogStore.shared.log("[external] window drop failed: \(message)")
+        guard var top = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+            .flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController else { return }
+        while let next = top.presentedViewController, !next.isBeingDismissed { top = next }
+        let alert = UIAlertController(title: "External drives", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        top.present(alert, animated: true)
+    }
+
+    /// A folder dragged in from the Files app. Drag and drop hands the folder over
+    /// on a different path than the picker's Open button, so it is a second way in
+    /// when the picker refuses the folder.
+    func dropped(_ provider: NSItemProvider, done: @escaping @MainActor (URL) -> Void,
+                 failed: @escaping @MainActor (String) -> Void) {
+        let types = provider.registeredTypeIdentifiers
+        LogStore.shared.log("[external] folder dropped, types: \(types.joined(separator: ","))")
+        // Files offers a folder as public.folder; anything that is a folder or directory will do.
+        guard let type = types.first(where: { UTType($0).map { $0.conforms(to: .folder) || $0.conforms(to: .directory) } ?? false }) else {
+            // Diagnostic: whether a single file still opens in place on this signing.
+            if let first = types.first {
+                _ = provider.loadInPlaceFileRepresentation(forTypeIdentifier: first) { url, inPlace, error in
+                    let scoped = url?.startAccessingSecurityScopedResource() ?? false
+                    if scoped { url?.stopAccessingSecurityScopedResource() }
+                    let text = "[external] dropped a file (\(first)): url=\(url == nil ? 0 : 1) in-place=\(inPlace ? 1 : 0)"
+                        + " scoped=\(scoped ? 1 : 0)" + (error.map { " error=\(($0 as NSError).domain) \(($0 as NSError).code)" } ?? "")
+                    Task { @MainActor in LogStore.shared.log(text) }
+                }
+            }
+            failed("That is not a folder. Drag the folder itself, not a file inside it.")
+            return
+        }
+        let inPlaceOffered = provider.hasRepresentationConforming(toTypeIdentifier: type, fileOptions: .openInPlace)
+        LogStore.shared.log("[external] dropped \(type): open-in-place offered=\(inPlaceOffered ? 1 : 0)"
+            + " name=\(provider.suggestedName == nil ? 0 : 1)")
+        _ = provider.loadInPlaceFileRepresentation(forTypeIdentifier: type) { url, inPlace, error in
+            // Held across the hop to the main thread; add() takes its own access and keeps it.
+            let scoped = url?.startAccessingSecurityScopedResource() ?? false
+            Task { @MainActor in
+                defer { if scoped { url?.stopAccessingSecurityScopedResource() } }
+                LogStore.shared.log("[external] dropped folder: url=\(url == nil ? 0 : 1) in-place=\(inPlace ? 1 : 0)"
+                    + " scoped=\(scoped ? 1 : 0)" + (error.map { " error=\(Self.describe($0))" } ?? ""))
+                if let url, inPlace { done(url); return }
+                // Build 58: Files gave neither a URL nor an error here, for a drive and for
+                // a Downloads folder alike. The older item API hands file-provider items
+                // over as a URL of their own, so it is tried next.
+                self.loadItem(provider, type: type, done: done, failed: failed)
+            }
+        }
+    }
+
+    private func loadItem(_ provider: NSItemProvider, type: String, done: @escaping @MainActor (URL) -> Void,
+                          failed: @escaping @MainActor (String) -> Void) {
+        provider.loadItem(forTypeIdentifier: type, options: nil) { item, error in
+            let url = item as? URL
+            let scoped = url?.startAccessingSecurityScopedResource() ?? false
+            let kind = item.map { String(describing: Swift.type(of: $0)) } ?? "nil"
+            Task { @MainActor in
+                defer { if scoped { url?.stopAccessingSecurityScopedResource() } }
+                LogStore.shared.log("[external] dropped folder by item: item=\(kind) url=\(url == nil ? 0 : 1)"
+                    + " scoped=\(scoped ? 1 : 0)" + (url.map { " copy=\(Self.isOurCopy($0) ? 1 : 0)" } ?? "")
+                    + (error.map { " error=\(Self.describe($0))" } ?? ""))
+                // A copy would fill this device and is not the drive: only the folder itself will do.
+                if let url, !Self.isOurCopy(url) { done(url); return }
+                if url != nil { failed("Files handed over a copy instead of the folder itself."); return }
+                self.loadURLObject(provider, done: done, failed: failed,
+                                   fallback: error.map { Self.describe($0) } ?? "Files did not hand Madeira the folder.")
+            }
+        }
+    }
+
+    /// Last try: the provider coerced to a URL object, which some sources offer even
+    /// without a public.file-url type.
+    private func loadURLObject(_ provider: NSItemProvider, done: @escaping @MainActor (URL) -> Void,
+                               failed: @escaping @MainActor (String) -> Void, fallback: String) {
+        let can = provider.canLoadObject(ofClass: NSURL.self)
+        LogStore.shared.log("[external] dropped folder: can load as URL=\(can ? 1 : 0)")
+        guard can else { failed(fallback); return }
+        _ = provider.loadObject(ofClass: NSURL.self) { object, error in
+            let url = (object as? NSURL).map { $0 as URL }
+            let scoped = url?.startAccessingSecurityScopedResource() ?? false
+            Task { @MainActor in
+                defer { if scoped { url?.stopAccessingSecurityScopedResource() } }
+                LogStore.shared.log("[external] dropped folder as URL: url=\(url == nil ? 0 : 1) scoped=\(scoped ? 1 : 0)"
+                    + (url.map { " copy=\(Self.isOurCopy($0) ? 1 : 0)" } ?? "")
+                    + (error.map { " error=\(Self.describe($0))" } ?? ""))
+                if let url, scoped, !Self.isOurCopy(url) { done(url); return }
+                failed(error.map { Self.describe($0) } ?? fallback)
+            }
+        }
+    }
+
+    /// A path inside Madeira's own storage: a copy iOS made for us, not the folder.
+    private static func isOurCopy(_ url: URL) -> Bool {
+        let home = URL(fileURLWithPath: NSHomeDirectory()).resolvingSymlinksInPath().path
+        return url.resolvingSymlinksInPath().path.hasPrefix(home + "/")
+    }
+
+    private static func describe(_ error: Error) -> String {
+        let ns = error as NSError
+        return "\(ns.domain) \(ns.code): \(ns.localizedDescription)"
+    }
+}
+
+/// The drop screen: one plain UIKit view and one drop target, so no SwiftUI row
+/// takes the drag first. On build 58 a folder dragged over Settings reached the
+/// window (canHandle ran 20 times as it crossed the rows) but the drop never
+/// happened, and Files threw the folder away.
+@MainActor final class FolderDropController: UIViewController, UIDropInteractionDelegate {
+    private let done: @MainActor (URL) -> Void
+    private let pick: @MainActor () -> Void
+    private let box = UIView()
+    private let label = UILabel()
+    private let hint = "Open the Files app, press and hold the drive or folder, and drag it here.\n\n"
+        + "On iPhone: keep holding it, swipe up with another finger to go home, open Madeira, and let go anywhere on this screen."
+    private var proposed: UIDropOperation?
+
+    init(done: @escaping @MainActor (URL) -> Void, pick: @escaping @MainActor () -> Void) {
+        self.done = done
+        self.pick = pick
+        super.init(nibName: nil, bundle: nil)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Add drive or folder"
+        view.backgroundColor = .systemBackground
+        navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .cancel, primaryAction: UIAction { [weak self] _ in
+            LogStore.shared.log("[external] drop screen cancelled")
+            self?.dismiss(animated: true)
+        })
+        box.layer.cornerRadius = 20
+        box.layer.borderWidth = 2
+        box.layer.borderColor = UIColor.systemBlue.cgColor
+        box.backgroundColor = .secondarySystemBackground
+        let icon = UIImageView(image: UIImage(systemName: "externaldrive.badge.plus"))
+        icon.tintColor = .systemBlue
+        icon.contentMode = .scaleAspectFit
+        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 56)
+        label.text = hint
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        label.font = .preferredFont(forTextStyle: .body)
+        let pickerButton = UIButton(configuration: .plain(), primaryAction: UIAction(title: "Use the folder picker instead") { [weak self] _ in
+            guard let self else { return }
+            let pick = self.pick
+            self.dismiss(animated: true) { pick() }
+        })
+        let pasteButton = UIButton(configuration: .plain(), primaryAction: UIAction(title: "Paste a folder copied in Files") { [weak self] _ in
+            guard let self else { return }
+            self.show("Opening the folder…", error: false)
+            ExternalFolderPicker.shared.pasteFolder(done: { [weak self] url in self?.finish(url) },
+                                                    failed: { [weak self] message in self?.fail(message) })
+        })
+        let anchorButton = UIButton(configuration: .plain(), primaryAction: UIAction(title: "Make a \(ExternalFolderPicker.anchorName) folder on the drive") { [weak self] _ in
+            guard let self else { return }
+            let done = self.done
+            self.dismiss(animated: true) { ExternalFolderPicker.shared.presentAnchor(done) }
+        })
+        let picker = UIStackView(arrangedSubviews: [pasteButton, anchorButton, pickerButton])
+        picker.axis = .vertical
+        picker.spacing = 2
+        picker.alignment = .center
+        let stack = UIStackView(arrangedSubviews: [icon, label])
+        stack.axis = .vertical
+        stack.spacing = 20
+        stack.alignment = .center
+        for subview in [box, stack, picker] as [UIView] {
+            subview.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(subview)
+        }
+        let guide = view.safeAreaLayoutGuide
+        NSLayoutConstraint.activate([
+            box.leadingAnchor.constraint(equalTo: guide.leadingAnchor, constant: 20),
+            box.trailingAnchor.constraint(equalTo: guide.trailingAnchor, constant: -20),
+            box.topAnchor.constraint(equalTo: guide.topAnchor, constant: 20),
+            box.bottomAnchor.constraint(equalTo: picker.topAnchor, constant: -12),
+            stack.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -24),
+            stack.centerYAnchor.constraint(equalTo: box.centerYAnchor),
+            picker.centerXAnchor.constraint(equalTo: guide.centerXAnchor),
+            picker.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -12),
+        ])
+        // On the whole screen, so a drop anywhere on it counts.
+        view.addInteraction(UIDropInteraction(delegate: self))
+    }
+
+    private func show(_ text: String, error: Bool) {
+        label.text = text
+        label.textColor = error ? .systemRed : .label
+    }
+
+    private func highlight(_ on: Bool) {
+        box.backgroundColor = on ? UIColor.systemBlue.withAlphaComponent(0.15) : .secondarySystemBackground
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
+        let types = session.items.flatMap { $0.itemProvider.registeredTypeIdentifiers }
+        LogStore.shared.log("[external] drop screen: drag entered, items=\(session.items.count) types: \(types.joined(separator: ","))")
+        // Anything is let in, so a drag that is not a folder is told why instead of flying back.
+        return true
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnter session: UIDropSession) { highlight(true) }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
+        let operation: UIDropOperation = session.items.count == 1 ? .copy : .forbidden
+        if operation != proposed {
+            proposed = operation
+            LogStore.shared.log("[external] drop screen: proposing \(operation == .copy ? "copy" : "forbidden")"
+                + " local=\(session.localDragSession == nil ? 0 : 1)")
+        }
+        return UIDropProposal(operation: operation)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidExit session: UIDropSession) {
+        highlight(false)
+        LogStore.shared.log("[external] drop screen: drag left the screen")
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: UIDropSession) {
+        highlight(false)
+        proposed = nil
+        LogStore.shared.log("[external] drop screen: drag ended")
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
+        LogStore.shared.log("[external] drop screen: dropped")
+        guard let provider = session.items.first?.itemProvider else { return }
+        show("Opening the folder…", error: false)
+        ExternalFolderPicker.shared.dropped(provider, done: { [weak self] url in self?.finish(url) },
+                                            failed: { [weak self] message in self?.fail(message) })
+    }
+
+    private func finish(_ url: URL) {
+        let done = self.done
+        dismiss(animated: true) { done(url) }
+    }
+
+    private func fail(_ message: String) {
+        LogStore.shared.log("[external] drop screen: \(message)")
+        show(message + "\n\n" + hint, error: true)
+    }
+}
+
+/// The folder picker's Open button does nothing when this copy is signed with a
+/// profile whose App ID differs from its bundle ID (KravaSigner and other signers
+/// that keep the bundle ID do this): iOS drops the pick without calling back, and
+/// only Cancel works. The picker names the app that gets the folder in its
+/// DOCConfiguration (hostIdentifier), filled in from the bundle ID, and the folder
+/// is only granted to the App ID the process is really signed with.
+///
+/// Build 47 swapped the value through hostIdentifier's setter and getter only, and
+/// Open still did nothing on iOS 27.2. So while Madeira's own folder picker is open
+/// this now also rewrites every field of the picker and its configuration that
+/// holds the bundle ID, again just before the configuration is encoded for the
+/// picker's process, and logs what each field holds and which hooks ran, so one
+/// device log shows how far the change got. Nothing changes on a copy whose bundle
+/// ID already is its App ID, and the folder is still opened in place, never copied.
+///
+/// Build 48 showed the App ID reaching the configuration that is sent (hostIdentifier
+/// = App ID, encoded once) and Open still doing nothing on iOS 27.2, so the host
+/// identity alone is not what iOS checks there. madeira.cfg `external-picker-fix`
+/// picks what else to try, without a new build: unset or 1 = all of the above; or a
+/// comma list of hooks (only build 47's setter/getter swap), ignore (the picker's
+/// "ignore the application entitlement" flag), inprocess (the configuration's
+/// _inProcess flag) and nobookmark (_neverCreateBookmarkForOpenInPlace); 0 = off.
+enum FolderPickerSigning {
+    enum Outcome: String { case picked, cancelled, swipedAway = "swiped away" }
+
+    /// The signed App ID when it differs from the bundle ID, else nil.
+    static let signedAppID: String? = {
+        guard let signed = signedAppIdentifier() ?? SigningProfile.embedded?.appIdentifier,
+              signed != Bundle.main.bundleIdentifier else { return nil }
+        return signed
+    }()
+    private static let bundleID = Bundle.main.bundleIdentifier ?? ""
+    /// One object for every write, so the fields that take it keep it alive.
+    private static let signedObject: NSString? = signedAppID.map { $0 as NSString }
+
+    private static let lock = NSLock()
+    private static var open = false
+    /// Extra changes chosen in madeira.cfg (hooks, ignore, inprocess, nobookmark).
+    private static var options: Set<String> = []
+    private static var installed = false
+    /// Hook calls while the picker is open: how many ran, how many swapped a value.
+    private static var calls: [String: (ran: Int, swapped: Int)] = [:]
+
+    // MARK: session
+
+    /// Right before the picker is created, so the hooks are in effect when iOS fills it in.
+    static func willPick() {
+        // Default on. 0: the folder picker is left as iOS builds it, so on a copy signed with a different App ID
+        // its Open button does nothing again. Otherwise a comma list of extras: hooks (only build 47's swap), ignore
+        // (the picker's ignore-entitlement flag), inprocess (the picker runs inside Madeira), nobookmark (no bookmark
+        // for the opened folder). Read each time the picker opens.
+        let setting = (MadeiraConfig.get("external-picker-fix") ?? "1").lowercased()
+        let words = Set(setting.split(whereSeparator: { $0 == "," || $0 == " " }).map(String.init))
+        let picked = words.intersection(["hooks", "ignore", "inprocess", "nobookmark"])
+        let chosen = words.isDisjoint(with: ["0", "off", "no", "false"]) ? (picked.isEmpty ? "all" : picked.sorted().joined(separator: ",")) : "off"
+        guard let signedAppID else {
+            LogStore.shared.log("[external] folder picker: App ID matches the bundle ID, nothing to fix")
+            return
+        }
+        guard chosen != "off" else {
+            LogStore.shared.log("[external] folder picker: fix off in madeira.cfg")
+            return
+        }
+        lock.lock()
+        if !installed { installed = install(signedAppID) }
+        open = true; options = picked; calls = [:]
+        lock.unlock()
+        LogStore.shared.log("[external] folder picker opened with the signed App ID mode=\(chosen)"
+            + " bundle-id-len=\(bundleID.count) app-id-len=\(signedAppID.count)")
+    }
+
+    /// The picker answered or went away.
+    static func didPick(_ outcome: Outcome) {
+        lock.lock()
+        guard open else { lock.unlock(); return }
+        open = false
+        let counts = calls.keys.sorted().map { "\($0)=\(calls[$0]!.ran)/\(calls[$0]!.swapped)" }.joined(separator: " ")
+        lock.unlock()
+        LogStore.shared.log("[external] folder picker \(outcome.rawValue); hook calls ran/swapped: \(counts.isEmpty ? "none" : counts)")
+    }
+
+    private static var active: (on: Bool, options: Set<String>) {
+        lock.lock(); defer { lock.unlock() }
+        return (open, options)
+    }
+
+    private static func count(_ hook: String, swapped: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        var entry = calls[hook] ?? (0, 0)
+        entry.ran += 1
+        if swapped { entry.swapped += 1 }
+        calls[hook] = entry
+    }
+
+    // MARK: fixing up the picker
+
+    /// Just after the picker is created and before it is shown.
+    static func prepare(_ picker: NSObject) {
+        let (on, options) = active
+        guard on else { return }
+        report(picker, stage: "created")
+        guard !options.contains("hooks") else { return }
+        var rewritten = rewrite(picker)
+        let configs = configurations(of: picker)
+        for config in configs { rewritten += rewrite(config) }
+        if options.contains("ignore") { setFlag(picker, name: "_ignoreApplicationEntitlementForImport") }
+        for config in configs {
+            if options.contains("inprocess") { setFlag(config, name: "_inProcess") }
+            if options.contains("nobookmark") { setFlag(config, name: "_neverCreateBookmarkForOpenInPlace") }
+        }
+        LogStore.shared.log("[external] folder picker fields rewritten: \(rewritten.isEmpty ? "none" : rewritten.joined(separator: ","))")
+        report(picker, stage: "prepared")
+    }
+
+    /// Logs what the identity fields of the picker and its configuration hold.
+    static func report(_ picker: NSObject, stage: String) {
+        guard active.on || stage == "shown" else { return }
+        var parts = ["picker{\(describe(picker))}"]
+        for config in configurations(of: picker) { parts.append("\(type(of: config)){\(describe(config))}") }
+        LogStore.shared.log("[external] folder picker \(stage): " + parts.joined(separator: " "))
+    }
+
+    /// The DOCConfiguration objects the picker holds.
+    private static func configurations(of picker: NSObject) -> [NSObject] {
+        guard let cls = NSClassFromString("DOCConfiguration") else { return [] }
+        var found: [NSObject] = []
+        for (_, ivar, _) in ivars(of: picker) where isObject(ivar) {
+            if let value = object_getIvar(picker, ivar) as? NSObject, value.isKind(of: cls),
+               !found.contains(where: { $0 === value }) { found.append(value) }
+        }
+        return found
+    }
+
+    /// Every object field of `object` that holds the bundle ID gets the signed App
+    /// ID instead. Returns the fields' names.
+    private static func rewrite(_ object: NSObject) -> [String] {
+        guard let signedObject else { return [] }
+        var names: [String] = []
+        for (name, ivar, _) in ivars(of: object) where isObject(ivar) {
+            guard let value = object_getIvar(object, ivar) as? NSString, value as String == bundleID else { continue }
+            object_setIvarWithStrongDefault(object, ivar, signedObject)
+            names.append(name)
+        }
+        return names
+    }
+
+    /// Sets a BOOL field to YES when the object has one by that name.
+    private static func setFlag(_ object: NSObject, name: String) {
+        guard let field = ivars(of: object).first(where: { $0.name == name }), field.kind == "B" || field.kind == "c" else {
+            LogStore.shared.log("[external] folder picker: no \(name) field")
+            return
+        }
+        Unmanaged.passUnretained(object).toOpaque().advanced(by: ivar_getOffset(field.ivar)).storeBytes(of: 1, as: UInt8.self)
+        LogStore.shared.log("[external] folder picker: \(name) set")
+    }
+
+    /// The fields that look like an app's identity, with what they hold: the
+    /// bundle ID, the signed App ID, nothing, or the value itself.
+    private static func describe(_ object: NSObject) -> String {
+        let words = ["identifier", "host", "bundle", "entitlement", "client", "source", "process", "bookmark", "interaction"]
+        var parts: [String] = []
+        for (name, ivar, kind) in ivars(of: object) where words.contains(where: { name.lowercased().contains($0) }) {
+            if isObject(ivar) {
+                let value = object_getIvar(object, ivar)
+                if value == nil { parts.append("\(name)=nil"); continue }
+                guard let text = value as? NSString else { parts.append("\(name)=<\(type(of: value!))>"); continue }
+                let string = text as String
+                parts.append("\(name)=" + (string == bundleID ? "bundle-id" : string == signedAppID ? "app-id" : "\"\(string)\""))
+            } else if kind == "B" || kind == "c" {
+                let field = Unmanaged.passUnretained(object).toOpaque().advanced(by: ivar_getOffset(ivar))
+                parts.append("\(name)=\(field.load(as: UInt8.self))")
+            } else if kind == "q" || kind == "Q" {
+                let field = Unmanaged.passUnretained(object).toOpaque().advanced(by: ivar_getOffset(ivar))
+                parts.append("\(name)=\(field.load(as: Int64.self))")
+            }
+        }
+        return parts.joined(separator: " ")
+    }
+
+    /// All instance variables of the object's class and its superclasses below NSObject.
+    private static func ivars(of object: NSObject) -> [(name: String, ivar: Ivar, kind: String)] {
+        var result: [(name: String, ivar: Ivar, kind: String)] = []
+        var cls: AnyClass? = object_getClass(object)
+        while let current = cls, ObjectIdentifier(current) != ObjectIdentifier(NSObject.self) {
+            var count: UInt32 = 0
+            if let list = class_copyIvarList(current, &count) {
+                for i in 0..<Int(count) {
+                    let ivar = list[i]
+                    guard let name = ivar_getName(ivar) else { continue }
+                    let type = ivar_getTypeEncoding(ivar).map { String(cString: $0) } ?? ""
+                    result.append((String(cString: name), ivar, type))
+                }
+                free(list)
+            }
+            cls = class_getSuperclass(current)
+        }
+        return result
+    }
+
+    private static func isObject(_ ivar: Ivar) -> Bool {
+        ivar_getTypeEncoding(ivar).map { $0.pointee == CChar(UInt8(ascii: "@")) } ?? false
+    }
+
+    // MARK: hooks
+
+    /// The signed App ID in place of the bundle ID while the picker is open; any
+    /// other value, and every value at other times, is kept.
+    private static func host(_ value: NSString?, hook: String) -> NSString? {
+        guard active.on else { return value }
+        let swap = value.map { $0 as String == bundleID } ?? false
+        count(hook, swapped: swap)
+        return swap ? signedObject : value
+    }
+
+    /// Hooks DOCConfiguration's hostIdentifier setter and getter and its
+    /// encodeWithCoder:. Only methods the class defines itself are replaced, so
+    /// nothing it inherits changes. False when the class is not loaded yet, to try
+    /// again at the next pick.
+    private static func install(_ signed: String) -> Bool {
+        if NSClassFromString("DOCConfiguration") == nil {
+            for framework in ["DocumentManager", "DocumentManagerCore"] {
+                _ = dlopen("/System/Library/PrivateFrameworks/\(framework).framework/\(framework)", RTLD_LAZY)
+            }
+        }
+        guard let cls = NSClassFromString("DOCConfiguration") else {
+            LogStore.shared.log("[external] folder picker: DOCConfiguration not found, picker left as it is")
+            return false
+        }
+        var count: UInt32 = 0
+        guard let list = class_copyMethodList(cls, &count) else { return true }
+        defer { free(list) }
+        let methods = (0..<Int(count)).map { list[$0] }
+        func own(_ name: String) -> (Method, Selector)? {
+            let sel = NSSelectorFromString(name)
+            return methods.first { method_getName($0) == sel }.map { ($0, sel) }
+        }
+        var hooked: [String] = []
+        if case let (method, sel)? = own("setHostIdentifier:") {
+            typealias Setter = @convention(c) (AnyObject, Selector, NSString?) -> Void
+            let original = unsafeBitCast(method_getImplementation(method), to: Setter.self)
+            let body: @convention(block) (AnyObject, NSString?) -> Void = { object, value in
+                original(object, sel, host(value, hook: "set"))
+            }
+            method_setImplementation(method, imp_implementationWithBlock(body))
+            hooked.append("set")
+        }
+        if case let (method, sel)? = own("hostIdentifier") {
+            typealias Getter = @convention(c) (AnyObject, Selector) -> NSString?
+            let original = unsafeBitCast(method_getImplementation(method), to: Getter.self)
+            let body: @convention(block) (AnyObject) -> NSString? = { object in
+                host(original(object, sel), hook: "get")
+            }
+            method_setImplementation(method, imp_implementationWithBlock(body))
+            hooked.append("get")
+        }
+        if case let (method, sel)? = own("encodeWithCoder:") {
+            // The last moment before the configuration goes to the picker's process.
+            typealias Encode = @convention(c) (AnyObject, Selector, NSCoder) -> Void
+            let original = unsafeBitCast(method_getImplementation(method), to: Encode.self)
+            let body: @convention(block) (AnyObject, NSCoder) -> Void = { object, coder in
+                let (on, options) = active
+                if on, !options.contains("hooks"), let config = object as? NSObject {
+                    FolderPickerSigning.count("encode", swapped: !rewrite(config).isEmpty)
+                } else if on {
+                    FolderPickerSigning.count("encode", swapped: false)
+                }
+                original(object, sel, coder)
+            }
+            method_setImplementation(method, imp_implementationWithBlock(body))
+            hooked.append("encode")
+        }
+        let names = ivarNames(cls)
+        LogStore.shared.log("[external] folder picker hooks: \(hooked.isEmpty ? "none" : hooked.joined(separator: "+"))"
+            + " DOCConfiguration fields: \(names)")
+        return true
+    }
+
+    private static func ivarNames(_ cls: AnyClass) -> String {
+        var count: UInt32 = 0
+        guard let list = class_copyIvarList(cls, &count) else { return "none" }
+        defer { free(list) }
+        return (0..<Int(count)).compactMap { ivar_getName(list[$0]).map { String(cString: $0) } }.joined(separator: ",")
     }
 }
 

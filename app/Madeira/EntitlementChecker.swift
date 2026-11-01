@@ -30,6 +30,16 @@ func checkAppEntitlement(_ ent: String) -> Bool {
     return false
 }
 
+/// The App ID this copy is signed with: its "application-identifier" entitlement
+/// without the team in front. nil when it cannot be read or is a wildcard.
+func signedAppIdentifier() -> String? {
+    guard let task = _SecTaskCreateFromSelf(nil),
+          let value = _SecTaskCopyValueForEntitlement(task, "application-identifier" as NSString, nil) as? String,
+          let dot = value.firstIndex(of: ".") else { return nil }
+    let appID = String(value[value.index(after: dot)...])
+    return appID.isEmpty || appID.contains("*") ? nil : appID
+}
+
 struct EntitlementStatus {
     let jitAllowed: Bool
     let increasedMemory: Bool

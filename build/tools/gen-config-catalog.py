@@ -82,6 +82,14 @@ OVERLAY = {
                 "kind": "int", "default": "10",
                 "note": "Default 10 ms between pasted characters. Range 5-100 ms; use a longer interval for games "
                         "that miss fast text input. Enforced at delivery as well as queueing. Restart the session after changing it."},
+    # Black Ops III (build/wine-patches/0019-ntdll-sysx64-file-for-x64-reads.patch, unix file.c).
+    "env.MADEIRA_SYSX64_FILE": {"category": "Wine core (ntdll)", "title": "x64 games read system DLLs from sysx64",
+                "kind": "bool", "default": "0",
+                "note": "Default off. 1: when an x64 game opens a .dll directly in system32 to read it, Madeira opens "
+                        "the x64 copy in sysx64 instead when one exists (Black Ops III checks its system DLLs this "
+                        "way). The loader and ntdll.dll are not affected. Set it in that game's own file; read once "
+                        "per session. Companion of env.MADEIRA_SYSX64_IMAGE.",
+                "sources": ["build/wine-patches/0019-ntdll-sysx64-file-for-x64-reads.patch"]},
     "env.MADEIRA_DOCK_STEAM_RUN": {"category": "Steam & Dock", "kind": "bool", "default": "1",
                 "note": "On by default: when a game in a Madeira Dock session asks Steam to start another game "
                         "(steam.exe with steam://run/<App ID>, as Black Ops II's campaign does for Zombies), "

@@ -2151,7 +2151,22 @@ static DECLSPEC_NORETURN void exit_thread( int status )
 
     if (InterlockedDecrement( &nb_threads ) <= 0) exit_process( status );
 
-    if ((teb = InterlockedExchangePointer( &prev_teb, NtCurrentTeb() )))
+    /* [ea-thread-reap] (from 125hz c1b08ee9, ml2290): every Wine process shares
+     * this one prev_teb. 32-bit processes started one after another (a launcher
+     * installer's VC++ redistributables, Battle.net/Ubisoft helpers) can get the
+     * same WoW window and TEB addresses, so the raw pointer could name the thread
+     * that is exiting now: it freed its own kernel stack (unregister_view+4,
+     * faulting while it held virtual_mutex) and the installer waited forever.
+     * ios_ea_reap_exited_thread (virtual_ios.c) frees the previous thread only
+     * after finding it, by process, thread id and pthread, in the live TEB list.
+     * env.MADEIRA_THREAD_REAP_CHECKED = 0: the upstream hand-off. */
+    const char *checked = getenv( "MADEIRA_THREAD_REAP_CHECKED" );
+    if (!(checked && checked[0] == '0'))
+    {
+        extern void ios_ea_reap_exited_thread( TEB *current );
+        ios_ea_reap_exited_thread( NtCurrentTeb() );
+    }
+    else if ((teb = InterlockedExchangePointer( &prev_teb, NtCurrentTeb() )))
     {
         struct ntdll_thread_data *thread_data = (struct ntdll_thread_data *)&teb->GdiTebBatch;
 

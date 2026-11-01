@@ -673,7 +673,7 @@ struct LibraryEntry: Codable, Identifiable {
     func configureLaunch() {
         // "The game"'s identity and the launch's working folder, for this launch only
         // (the bridge reads and clears them); every other launch starts without them.
-        unsetenv("MADEIRA_STEAM_APPID"); unsetenv("MADEIRA_STEAM_APPPATH"); unsetenv("MADEIRA_WORKDIR")
+        unsetenv("MADEIRA_STEAM_APPID"); unsetenv("MADEIRA_STEAM_APPPATH"); unsetenv("MADEIRA_WORKDIR"); unsetenv("MADEIRA_NO_STEAM_IDENTITY")
         if steamAppID != nil {
             // A Steam game through Madeira Dock: Dock has set what starts (ContentView.startDock);
             // the virtual monitor follows this entry's Resolution, as below. "The game" starts
@@ -694,6 +694,16 @@ struct LibraryEntry: Codable, Identifiable {
             // folder) instead of the bridge's fixed one.
             setenv("MADEIRA_STEAM_APPID", String(steamAppID), 1)
             setenv("MADEIRA_STEAM_APPPATH", windowsPath, 1)
+        }
+        // ml2310: a game from another store is not a Steam game. With the bridge's fixed Steam
+        // identity its launcher took its Steam path and failed; env.MADEIRA_STORE_STEAM_IDENTITY=1
+        // publishes it as before.
+        // Launchers' programs too (Ubisoft Connect, Battle.net, Rockstar, FFXIV, and the games
+        // they list): the Rockstar Games Launcher read SteamAppId as a Steam start.
+        let path = relativePath.lowercased()
+        let launcherProgram = steamAppID == nil && LauncherID.allCases.contains { id in id.sectionFolders.contains { path.hasPrefix($0 + "/") } }
+        if epicAppName != nil || launcherProgram, MadeiraConfig.get("env.MADEIRA_STORE_STEAM_IDENTITY") != "1" {
+            setenv("MADEIRA_NO_STEAM_IDENTITY", "1", 1)
         }
         // ml1163: a game starts in launchDirectory (a chosen folder, Steam's for "The game",
         // else the program's own). It is exported when the bridge's default, the folder of

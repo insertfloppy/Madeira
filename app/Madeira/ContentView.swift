@@ -3060,11 +3060,13 @@ struct ContentView: View {
             // d3d9 (shipped as d3d9-wined3d.dll) on wined3d's OpenGL renderer, i.e.
             // opengl32 and the winios WGL driver on Zink/MoltenVK (gl-backend = zink).
             // WineProcessBridge.m re-points the session's d3d9.dll links to it.
-            if let txt = MadeiraConfig.get("d3d9") {
+            // The game's own config wins, as it does for the native reader there.
+            let gameD3D9 = MadeiraConfig.gameValue("d3d9")
+            if let txt = gameD3D9 ?? MadeiraConfig.get("d3d9") {
                 let v = txt.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !v.isEmpty {
                     setenv("MADEIRA_D3D9", v, 1)
-                    logStore.log("D3D9 frontend: MADEIRA_D3D9=\(v) via madeira.cfg d3d9")
+                    logStore.log("D3D9 frontend: MADEIRA_D3D9=\(v) via \(gameD3D9 != nil ? "the game's config" : "madeira.cfg") d3d9")
                 }
             }
 

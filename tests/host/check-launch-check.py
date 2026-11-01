@@ -131,6 +131,7 @@ expect(LaunchCheck.logLine(title: "X", notes: LaunchCheck.notes(input)) == "[wil
 expect(KnownGames.find(windowsPath: #"C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive"#, steamAppID: 730)?.id == "counter-strike-2", "CS2 by App ID")
 expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\The Escapists 2"#, steamAppID: nil)?.id == "escapists-2", "Escapists 2 by folder")
 expect(KnownGames.find(windowsPath: #"C:\Games\Megabonk\Megabonk.exe"#, steamAppID: nil)?.id == "megabonk", "Megabonk by program")
+expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\ProjectZomboid"#, steamAppID: 108600)?.id == "project-zomboid", "Project Zomboid by app ID")
 expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\Stardew Valley\Stardew Valley.exe"#, steamAppID: nil)?.id == "stardew-valley"
        && KnownGames.find(windowsPath: "", steamAppID: 413150)?.tests.first?.build == 48, "Stardew Valley by program and App ID, build 48")
 expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\Slay the Spire 2\SlayTheSpire2.exe"#, steamAppID: nil)?.id == "slay-the-spire-2"
@@ -138,6 +139,8 @@ expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\Slay the Spire 2\Sla
 expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\Call of Duty Modern Warfare 2\iw4sp.exe"#, steamAppID: nil)?.id == "modern-warfare-2-2009"
        && KnownGames.find(windowsPath: "", steamAppID: 10180)?.tests.first?.build == 48, "MW2 (2009) campaign by program and App ID, build 48")
 expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\Call of Duty Modern Warfare 2\iw4mp.exe"#, steamAppID: 10190) == nil, "MW2 multiplayer is not marked tested")
+expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\GarrysMod\bin\win64\gmod.exe"#, steamAppID: nil)?.id == "garrys-mod"
+       && KnownGames.find(windowsPath: "", steamAppID: 4000)?.tests.first?.build == 60, "Garry's Mod by program and App ID, build 60")
 expect(KnownGames.find(windowsPath: #"C:\Games\Foo\foo.exe"#, steamAppID: 620) == nil, "other games are not known")
 expect(Set(KnownGames.all.map(\.id)).count == KnownGames.all.count, "known game ids are unique")
 input = base; input.tested = KnownGames.all[0]

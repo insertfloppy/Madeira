@@ -628,15 +628,48 @@ enum GameRecommendations {
     /// write-protect change logged three lines: 371 MB, 3.6 million lines while
     /// loading, with heavy stutters. The list keeps Madeira's default of no
     /// err:virtual whatever the global settings say, like God of War's.
+    /// Version 3 (iPhone, build 60, 2026-10-31): -XX:TieredStopAtLevel=1 keeps
+    /// Java on its quick C1 compiler. FEX translated half as many blocks by the
+    /// same point (376k vs ~800k: C2's recompiles patch the code cache, and every
+    /// patch re-translates a page), the menus answer faster and play was fine.
+    /// Time to the main menu stayed about the same.
+    /// Version 4 (iPhone, build 60, 2026-10-31): the launcher's class path is
+    /// ".;projectzomboid.jar", so every class load first looked in the game folder,
+    /// and each miss is a slow case-insensitive Wine path lookup (fstatat, xattrs).
+    /// _JAVA_OPTIONS comes after the launcher's options, so its java.class.path
+    /// wins: the jar first, the folder second (loose class files, as Java mods
+    /// and older builds use, still load). Main menu in about 2.5 minutes instead
+    /// of 4 to 4.5.
     static let projectZomboid = GameRecommendation(
-        id: "project-zomboid", title: "Project Zomboid", version: 2,
+        id: "project-zomboid", title: "Project Zomboid", version: 4,
         config: """
         # Madeira's recommended settings for Project Zomboid.
         # Reset to Recommended, at the bottom of the game's settings, brings them back.
-        env._JAVA_OPTIONS = -XX:-UseZGC -XX:+UseG1GC
+        env._JAVA_OPTIONS = -XX:-UseZGC -XX:+UseG1GC -XX:TieredStopAtLevel=1 -Djava.class.path=projectzomboid.jar;.
         env.WINEDEBUG = err+all,err-virtual,fixme-all
         env.MADEIRA_EC_HOOK_TRACE = 0
         """)
+
+    /// Project Zomboid's legacy build 41 (Steam's b41 beta branch): no
+    /// projectzomboid.jar; its classes sit loose under java\ beside the libraries'
+    /// jars, all on the launcher's class path, so version 4's java.class.path would
+    /// leave the game unable to find its own classes. The same list without it.
+    static let projectZomboidB41 = GameRecommendation(
+        id: "project-zomboid-b41", title: "Project Zomboid (build 41)", version: 1,
+        config: """
+        # Madeira's recommended settings for Project Zomboid (build 41).
+        # Reset to Recommended, at the bottom of the game's settings, brings them back.
+        env._JAVA_OPTIONS = -XX:-UseZGC -XX:+UseG1GC -XX:TieredStopAtLevel=1
+        env.WINEDEBUG = err+all,err-virtual,fixme-all
+        env.MADEIRA_EC_HOOK_TRACE = 0
+        """)
+
+    /// Build 41 when the game's folder has its program but no projectzomboid.jar;
+    /// the current list otherwise (and before the game is installed).
+    static func projectZomboidList(folder: String, fileExists: (String) -> Bool) -> GameRecommendation {
+        fileExists(folder + "\\ProjectZomboid64.exe") && !fileExists(folder + "\\projectzomboid.jar")
+            ? projectZomboidB41 : projectZomboid
+    }
 
     /// Counter-Strike 2 (Steam; tested on an iPhone 17 Pro Max, build 47, 2026-10-30).
     /// v8.dll (48 MB, the Panorama UI) found no room in the JIT pool and cs2.exe
@@ -685,6 +718,25 @@ enum GameRecommendations {
         env.MADEIRA_X64_IMAGE_NOCOPY = 1
         env.DOTNET_GCRegionRange = 400000000
         env.DOTNET_EnableWriteXorExecute = 0
+        env.MADEIRA_EC_HOOK_TRACE = 0
+        """)
+
+    /// Garry's Mod (Steam; tested on an iPhone 17 Pro Max, build 60, 2026-10-31).
+    /// Multiplayer works on Steam's x86-64 branch (64-bit gmod.exe, 60 FPS against
+    /// 17-53 on the 32-bit default branch) with -nochromium. Its main menu and other
+    /// web panels are Chromium pages, and Chromium's sandboxed helpers don't start on
+    /// Madeira yet, so the menu says "Menu failed to load". CS2's pool lines carry the
+    /// 64-bit libcef.dll; pool-split is harmless and NOCOPY does nothing on 32-bit,
+    /// so the list fits both branches. No switches. How to play (branch, launch
+    /// argument, console commands) is the Will it run? note (KnownGames).
+    static let garrysMod = GameRecommendation(
+        id: "garrys-mod", title: "Garry's Mod", version: 1,
+        config: """
+        # Madeira's recommended settings for Garry's Mod.
+        # Reset to Recommended, at the bottom of the game's settings, brings them back.
+        pool = 896
+        pool-split = 1
+        env.MADEIRA_X64_IMAGE_NOCOPY = 1
         env.MADEIRA_EC_HOOK_TRACE = 0
         """)
 
@@ -754,17 +806,38 @@ enum GameRecommendations {
     /// 4GB-aligned slot", upc.exe exit code 1) and the client never opened. Version 2
     /// has none of those lines, so the extra windows spill into that range
     /// (MADEIRA_WOW_SPILL_CEF), and keeps the 2 GB margin, every window slot from the
-    /// start and the small DXMT rings. Its service and out-of-process COM need the
+    /// start and the small DXMT rings. Version 3 (build 58): upc.exe hooks ntdll by
+    /// writing into its own code, and a write into its own process is denied unless
+    /// the program is a local-write-target ("[hard-error] ... Error at hooking API
+    /// \"LdrFindResource_U\"", then exit 0xdeadc0de). Its service and out-of-process COM need the
     /// service manager, so the Wine desktop with Windows services first. The swap
     /// file takes the web helper's idle pages. No release delay (madeira-bcd's
     /// 2000 ms): Chromium's allocator reserves, releases and reserves again.
+    /// Version 4 (build 58 log, 2026-10-31): with the hook fixed the window opened,
+    /// then five UplayWebCore.exe helpers found no 4 GB window ("BOOT FAILED at stage
+    /// 'guest-window-reserve'"; the band holds eight), the picture only redrew on a
+    /// minimize and the client quit. upc.exe is the Chromium browser process (it
+    /// starts the UplayWebCore.exe helpers), and Chromium reads switches from the
+    /// process command line, so MADEIRA_CHILD_ARGS gives it one renderer and the GPU
+    /// work inside upc.exe. Device log 16:16Z: upc.exe still started a GPU process, so
+    /// Ubisoft's CEF setup seems to ignore its own command line; the line is harmless
+    /// and stays until a log shows otherwise. That run had no failed helpers before
+    /// upc.exe hit the x18 LDRSW crash (fixed in signal_arm64_ios.c).
+    /// Version 5 (log 16:20Z): with the crash gone, upc.exe ran its two services,
+    /// Chromium's GPU, network and storage helpers and asked for six renderers; the
+    /// ninth program found the window registry (eight entries) full and the client
+    /// said "Ubisoft services are temporarily unavailable". The switches line is
+    /// dropped; instead upc.exe alone is told 479 MB of memory (exe-phys-mb), which
+    /// caps Chromium at three renderers (physical MB / 2 / 60, at least 3), and the
+    /// registry now holds ten windows. The renderers keep the real figure for V8.
     static let ubisoftConnect = GameRecommendation(
-        id: "ubisoft-connect", title: "Ubisoft Connect", version: 2,
+        id: "ubisoft-connect", title: "Ubisoft Connect", version: 5,
         config: """
         # Madeira's recommended settings for Ubisoft Connect.
         # Reset to Recommended, at the bottom of the game's settings, brings them back.
         swap-mb = 4096
         swap-min-mb = 1
+        local-write-target = upc.exe;UbisoftConnect.exe;UplayWebCore.exe
         env.MADEIRA_SWAP_COVERAGE = broad
         env.MADEIRA_LOCK_ORPHAN = stamped
         env.MADEIRA_TOUCH_MOUSE = 1
@@ -772,6 +845,7 @@ enum GameRecommendations {
         env.MADEIRA_WOW_PLACEHOLDERS = 1
         env.DXMT_SMALL_RINGS = UbisoftConnect.exe;upc.exe;UplayWebCore.exe
         env.MADEIRA_EC_HOOK_TRACE = 0
+        exe-phys-mb = upc.exe:479
         """,
         fastSync: true, display: "fit", launchMode: "desktop", startServices: true)
 
@@ -796,8 +870,13 @@ enum GameRecommendations {
     /// MADEIRA_WOW_SPILL_CEF), with the Wine desktop with Windows services first for
     /// the Agent's out-of-process COM. Windows' location service is off: the client
     /// stops on it under Wine (Lutris's Battle.net script turns it off the same way).
+    /// Version 3 (build 58 log, 2026-10-31, StarCraft install): ten Battle.net.exe
+    /// renderers found no 4 GB window, the main page's renderer then crashed in
+    /// libcef.dll and its replacement could not start either, so the window went
+    /// blank while Agent.exe kept running. MADEIRA_CHILD_ARGS gives Battle.net.exe
+    /// (the Chromium browser process) one renderer and the GPU work in-process.
     static let battleNet = GameRecommendation(
-        id: "battle-net", title: "Battle.net", version: 2,
+        id: "battle-net", title: "Battle.net", version: 3,
         config: """
         # Madeira's recommended settings for Battle.net.
         # Reset to Recommended, at the bottom of the game's settings, brings them back.
@@ -811,6 +890,7 @@ enum GameRecommendations {
         env.DXMT_SMALL_RINGS = Battle.net Launcher.exe;Battle.net.exe;Agent.exe
         env.WINEDLLOVERRIDES = locationapi=d
         env.MADEIRA_EC_HOOK_TRACE = 0
+        env.MADEIRA_CHILD_ARGS = Battle.net.exe --renderer-process-limit=1 --in-process-gpu
         """,
         fastSync: true, display: "fit", launchMode: "desktop", startServices: true)
 
@@ -872,8 +952,8 @@ enum GameRecommendations {
         """)
 
     static let all = [rdr2Steam, rdr2Other, gta5EnhancedSteam, gta5EnhancedOther, ghostOfTsushima, godOfWar, horizonZeroDawn,
-                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, projectZomboid,
-                      counterStrike2, escapists2, slayTheSpire2, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,
+                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, projectZomboid, projectZomboidB41,
+                      counterStrike2, escapists2, slayTheSpire2, garrysMod, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,
                       ffxivLauncher, ffxivSetup, standard]
 
     // MARK: Recognising a game
@@ -882,7 +962,7 @@ enum GameRecommendations {
     static let rdr2AppID = 1174180, gta5EnhancedAppID = 3240220, ghostAppID = 2215430, godOfWarAppID = 1593500,
                horizonZeroDawnAppID = 1151640, darkSoulsRemasteredAppID = 570940, darkSoulsIIIAppID = 374320,
                projectZomboidAppID = 108600, counterStrike2AppID = 730, escapists2AppID = 641990,
-               slayTheSpire2AppID = 2868840
+               slayTheSpire2AppID = 2868840, garrysModAppID = 4000
     static let falloutNewVegasAppID = 22380, fallout3AppIDs: Set<Int> = [22300, 22370]   // Fallout 3, its GOTY Edition
     /// Black Ops II's campaign, Zombies and multiplayer.
     static let blackOps2AppIDs: Set<Int> = [202970, 212910, 202990]
@@ -913,10 +993,13 @@ enum GameRecommendations {
             if steamAppID.map(fallout3AppIDs.contains) == true || installFolder == "fallout 3"
                 || installFolder == "fallout 3 goty" { return fallout3 }
             if blackOps2AppIDs.contains(steamAppID ?? 0) || installFolder == "call of duty black ops ii" { return blackOps2 }
-            if steamAppID == projectZomboidAppID || installFolder == "projectzomboid" { return projectZomboid }
+            if steamAppID == projectZomboidAppID || installFolder == "projectzomboid" {
+                return projectZomboidList(folder: path, fileExists: fileExists)
+            }
             if steamAppID == counterStrike2AppID || installFolder == "counter-strike global offensive" { return counterStrike2 }
             if steamAppID == escapists2AppID || installFolder == "the escapists 2" { return escapists2 }
             if steamAppID == slayTheSpire2AppID || installFolder == "slay the spire 2" { return slayTheSpire2 }
+            if steamAppID == garrysModAppID || installFolder == "garrysmod" { return garrysMod }
             return nil
         }
         // A program, wherever it was installed: only the game's own programs, so a
@@ -948,13 +1031,15 @@ enum GameRecommendations {
         case "t6sp.exe", "t6zm.exe", "t6mp.exe":
             return blackOps2
         case "projectzomboid64.exe":
-            return projectZomboid
+            return projectZomboidList(folder: path.lastIndex(of: "\\").map { String(path[..<$0]) } ?? "", fileExists: fileExists)
         case "cs2.exe":
             return counterStrike2
         case "theescapists2.exe":
             return escapists2
         case "slaythespire2.exe":
             return slayTheSpire2
+        case "gmod.exe":
+            return garrysMod
         case "launcher.exe" where Array(parts.dropLast().suffix(2)) == ["rockstar games", "launcher"]:
             // The Rockstar Games Launcher outside Steam; another publisher's Launcher.exe gets nothing here.
             return rockstarLauncher

@@ -26,7 +26,8 @@ def require(condition, label):
         failures += 1
 
 
-sources = sorted((app / 'SwiftGOG').glob('*.swift')) + [app / 'GOGLibrary.swift', app / 'GOGGames.swift']
+sources = (sorted((app / 'SwiftGOG').glob('*.swift')) + sorted((app / 'SwiftGOG/Galaxy').glob('*.swift'))
+           + [app / 'GOGLibrary.swift', app / 'GOGGames.swift'])
 project = (app.parent / 'Madeira.xcodeproj/project.pbxproj').read_text()
 for path in sources:
     require(path.exists(), f'{path.name}: exists')
@@ -34,7 +35,7 @@ sources = [p for p in sources if p.exists()]
 for path in sources:
     text = path.read_text()
     require(text.startswith('// SPDX-License-Identifier: GPL-3.0-or-later'), f'{path.name}: licence header')
-    require(re.search(r'/\* (SwiftGOG/)?' + re.escape(path.name) + r' in Sources \*/,', project) is not None,
+    require(re.search(r'/\* (SwiftGOG/(Galaxy/)?)?' + re.escape(path.name) + r' in Sources \*/,', project) is not None,
             f'{path.name}: in the Xcode project sources')
     require('thebcd69' not in text and 'BCD Material' not in text, f'{path.name}: no BCD code or credit lines')
 
@@ -86,6 +87,32 @@ require(play_task(sample) == ('bin/x64/game.exe', '-nolauncher', 'bin\\x64'), 'p
 library_source = (app / 'GOGLibrary.swift').read_text()
 require('$0["isPrimary"] as? Bool == true' in library_source and '"FileTask"' in library_source,
         'play task: the Swift reader follows the same rules')
+
+# Redistributables and Galaxy (docs/GOG.md).
+galaxy_dir = app / 'SwiftGOG/Galaxy'
+for name in ('GalaxyWire.swift', 'GalaxyService.swift', 'GalaxyListener.swift'):
+    text = (galaxy_dir / name).read_text()
+    require('Portions copyright the Playport authors' in text, f'{name}: Playport credit kept')
+    require('import ContentKit' not in text, f'{name}: no ContentKit package')
+service = (galaxy_dir / 'GalaxyService.swift').read_text()
+require('without_new_session' in service, 'Galaxy: the game token leaves Madeira\'s own GOG tokens as they are')
+require(not re.search(r'log\.(info|warn)\([^\n]*(clientSecret|refreshToken|accessToken)\.value', service), 'Galaxy: no token or secret in a log line')
+require((app / 'legal/PLAYPORT.txt').exists(), 'Playport notice in the app\'s legal folder')
+exe = app / 'aarch64-windows/madeira-galaxy-service.exe'
+require(exe.exists() and exe.read_bytes()[:2] == b'MZ', 'GalaxyCommunication service program is in the aarch64 farm')
+require((root / 'build/gog-galaxy-service/main.c').exists(), 'GalaxyCommunication service source is in the repository')
+galaxy = (app / 'SwiftGOG/GOGGalaxy.swift').read_text()
+require('ControlSet001\\\\Services\\\\GalaxyCommunication' in galaxy, 'Galaxy: the service is registered under ControlSet001 (Wine links CurrentControlSet)')
+require('wineserver_is_running() == 0' in galaxy, 'Galaxy: the registry is written only while no session runs')
+content = (app / 'ContentView.swift').read_text()
+require('GOGGalaxy.shared.prepare(entry)' in content and 'GOGLibrary.shared.setupBatch(for: entry)' in content,
+        'Play: a GOG game gets its installers and Galaxy before it starts')
+library = (app / 'Library.swift').read_text()
+require('startServices == true || !setup.isEmpty' in library, 'the services batch runs a GOG game\'s installers')
+setup = (app / 'SwiftGOG/GOGSetup.swift').read_text()
+require('>\\"\\(result)\\" echo %ERRORLEVEL%' in setup, 'setup batch: redirect first, so a 0 exit code is written')
+catalog = (app / 'ConfigCatalog.generated.swift').read_text()
+require('env.MADEIRA_GOG_GALAXY' in catalog, 'settings catalog lists env.MADEIRA_GOG_GALAXY')
 
 print('\nAll GOG store checks passed.' if failures == 0 else f'\n{failures} GOG store check(s) failed.')
 raise SystemExit(1 if failures else 0)

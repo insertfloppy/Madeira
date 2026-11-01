@@ -86,6 +86,10 @@ struct GOGBuildManifest: Sendable {
     var buildID: String
     var installDirectory: String
     var depots: [Depot]
+    /// GOG's redistributables the build needs ("MSVC2017_x64", "openAL"): GOGSetup.
+    var dependencies: [String] = []
+    /// The game's own Galaxy client (its SDK signs in with it): GOGGalaxy.
+    var galaxy: GOGGalaxyClient?
 
     static func parse(_ json: [String: Any]) throws -> GOGBuildManifest {
         guard (json["version"] as? NSNumber)?.intValue == 2 else { throw GOGAPIError.legacyBuild }
@@ -99,8 +103,11 @@ struct GOGBuildManifest: Sendable {
                          manifest: manifest, size: (depot["size"] as? NSNumber)?.int64Value ?? 0,
                          compressedSize: (depot["compressedSize"] as? NSNumber)?.int64Value ?? 0)
         }
+        let dependencies = (json["dependencies"] as? [Any] ?? []).compactMap { $0 as? String }
+            .filter { (1...64).contains($0.count) && $0.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "_-.".contains($0)) } }
         return GOGBuildManifest(baseProductID: base, buildID: GOGAPI.string(json["buildId"]) ?? "",
-                                installDirectory: folder, depots: depots)
+                                installDirectory: folder, depots: depots, dependencies: dependencies,
+                                galaxy: GOGGalaxyClient(id: GOGAPI.string(json["clientId"]), secret: json["clientSecret"] as? String))
     }
 
     /// The depots to install: the game's and those of DLC the account owns, in one
@@ -156,7 +163,7 @@ actor GOGAPI {
 
     // GOG Galaxy's public client, which the token service expects (the same one
     // gogdl, Heroic and lgogdownloader use).
-    private static let clientID = "46899977096215655"
+    static let clientID = "46899977096215655"
     private static let clientSecret = "9d85c43b1482497dbbce61f6e4aa173a433796eeae2ca8c5f6129f2dc4de46d9"
     private static let redirect = "https://embed.gog.com/on_login_success?origin=client"
     static let userAgent = "Madeira (GOG content system client)"
@@ -395,7 +402,10 @@ actor GOGAPI {
         var components = URLComponents(string: Self.contentHost + "/products/\(Self.pathSafe(product))/secure_link")!
         components.queryItems = [URLQueryItem(name: "_version", value: "2"), URLQueryItem(name: "generation", value: "2"),
                                  URLQueryItem(name: "path", value: "/")]
-        let json = try await object(try await authorized(components.url!), method: "secure-link")
+        return try Self.endpoints(try await object(try await authorized(components.url!), method: "secure-link"), method: "secure-link")
+    }
+
+    private static func endpoints(_ json: [String: Any], method: String) throws -> [GOGEndpoint] {
         let endpoints = (json["urls"] as? [[String: Any]] ?? []).compactMap { entry -> GOGEndpoint? in
             guard let format = entry["url_format"] as? String else { return nil }
             var parameters: [String: String] = [:]
@@ -404,8 +414,36 @@ actor GOGAPI {
             }
             return GOGEndpoint(format: format, parameters: parameters)
         }
-        guard !endpoints.isEmpty else { throw GOGAPIError.invalid("secure-link") }
+        guard !endpoints.isEmpty else { throw GOGAPIError.invalid(method) }
         return endpoints
+    }
+
+    // MARK: Redistributables
+
+    /// GOG's redistributables ("dependencies"): the repository's pointer, then its
+    /// manifest (zlib JSON), as GOG Galaxy and Heroic read them. No sign-in needed.
+    func dependencyRepository() async throws -> [GOGDependency] {
+        let pointer = try await object(URLRequest(url: URL(string: Self.contentHost + "/dependencies/repository?generation=2")!),
+                                       method: "dependency-repository")
+        guard let text = pointer["repository_manifest"] as? String, let url = URL(string: text), url.scheme == "https" else {
+            throw GOGAPIError.invalid("dependency-repository")
+        }
+        let json = try GOGCodec.json(try await send(URLRequest(url: url), method: "dependency-manifest"), what: "dependencies")
+        return GOGDependency.parse(json)
+    }
+
+    /// One redistributable's file list (zlib JSON on GOG's CDN).
+    func dependencyDepot(_ hash: String) async throws -> Data {
+        guard GOGAPI.isHash(hash), let url = URL(string: "https://cdn.gog.com/content-system/v2/dependencies/meta/" + Self.galaxyPath(hash)) else {
+            throw GOGAPIError.invalid("dependency-hash")
+        }
+        return try await send(URLRequest(url: url), method: "dependency-depot")
+    }
+
+    /// Download addresses for redistributables' chunks: GOG's open link (no sign-in).
+    func dependencyLinks() async throws -> [GOGEndpoint] {
+        let url = URL(string: Self.contentHost + "/open_link?generation=2&_version=2&path=/dependencies/store/")!
+        return try Self.endpoints(try await object(URLRequest(url: url), method: "open-link"), method: "open-link")
     }
 
     // MARK: Helpers

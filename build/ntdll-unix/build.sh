@@ -292,6 +292,18 @@ for src in $WINE_SRC/dlls/ntdll/unix/*.c; do
             # given for the thread's name; with the variable unset it passes through.
             compile_one "$OBJ_DIR/sync_ios.c" "sync" -Dpthread_set_qos_class_self_np=madeira_guest_qos_self
             ;;
+        file)
+            # [file-watch] (virtual_ios.c): NtCreateFile and NtQueryInformationFile
+            # are renamed and wrapped by file_watch_ios.inc, appended to the copy.
+            perl -0pe 's/^NTSTATUS WINAPI NtCreateFile\(/static NTSTATUS ios_unwatched_NtCreateFile(/m;
+                       s/^NTSTATUS WINAPI NtQueryInformationFile\(/static NTSTATUS ios_unwatched_NtQueryInformationFile(/m' \
+                "$src" > "$OBJ_DIR/file_ios.c"
+            cat "$BUILD_DIR/file_watch_ios.inc" >> "$OBJ_DIR/file_ios.c"
+            if [ "$(grep -c '^static NTSTATUS ios_unwatched_Nt' "$OBJ_DIR/file_ios.c")" != 2 ]; then
+                echo "  file: file-watch patch did not apply"; exit 1
+            fi
+            compile_one "$OBJ_DIR/file_ios.c" "file"
+            ;;
         *)
             compile_one "$src" "$name"
             ;;

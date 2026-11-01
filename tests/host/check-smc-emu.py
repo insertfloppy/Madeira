@@ -77,7 +77,9 @@ parts = [
     function(vsrc, 'static void ios_smc_plain_remove( const void *base, size_t size )'),
     function(vsrc, 'static void ios_smc_forget_peb( void *peb )'),
     function(vsrc, 'static struct ios_smc_code_map *ios_smc_map_for( uintptr_t addr )'),
+    vsrc[vsrc.index('/* [smc-why]: why the last'):vsrc.index('static __thread int ios_smc_why;') + len('static __thread int ios_smc_why;')],
     function(vsrc, 'int ios_smc_write_ok( uintptr_t addr, size_t len )'),
+    function(vsrc, 'void ios_smc_count_refusal( int why )'),
     function(vsrc, 'uintptr_t ios_smc_alias( uintptr_t addr )'),
     function(vsrc, 'void ios_smc_alias_drop( uintptr_t addr )'),
     function(vsrc, 'static void ios_smc_view_gone( const void *base, size_t size )'),
@@ -100,9 +102,9 @@ require(aw.index('ios_smc_write_ok( at, length )') < aw.index('memcpy(') < aw.in
         'checked, stored, fenced, checked again')
 require('if (!rw && honor_guest_prot && ios_smc_write_ok( at, length )' in aw,
         'only for guest stores on pages without another alias')
-require('if (smc_candidate && !ios_smc_store_insn( insn )) goto dispatch_guest_fault;' in ssrc,
+require(re.search(r'if \(smc_candidate && !ios_smc_store_insn\( insn \)\)[^{]*\{[^}]*goto dispatch_guest_fault;', ssrc),
         'other instructions take FEX\'s path before anything is written')
-require('if (!emulated && smc_candidate) goto dispatch_guest_fault;' in ssrc,
+require(re.search(r'if \(!emulated && smc_candidate\)\s*\{[^}]*goto dispatch_guest_fault;', ssrc),
         'a store not completed takes FEX\'s path')
 require('if (rw_addr && honor_guest_prot && !smc_candidate && ios_alias_write_is_trapped( fault_addr ))' in ssrc,
         'the early trapped-page dispatch leaves candidates to the checked path')

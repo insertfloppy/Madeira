@@ -62,14 +62,53 @@ which become the game's library entry. A build without that file uses the
 folder's only program. Otherwise the install stops with a message to add the
 game by hand.
 
+## Redistributables
+
+A build names the redistributables it needs ("openAL", "MSVC2017_x64",
+"DOSBOX"). Madeira reads GOG's dependency repository
+(`content-system.gog.com/dependencies/repository?generation=2`, then its zlib
+JSON manifest), downloads each needed one's files into the game's folder after
+the game's own files (chunks from GOG's open link, no sign-in), and keeps the
+list on the install record (`SwiftGOG/GOGSetup.swift`).
+
+- Installers run at the game's first start, from the batch that starts the game
+  (`LibraryEntry.servicesScript`): each once per prefix, from its own folder,
+  with GOG's arguments. Its exit code goes to
+  `C:\madeira-games\gog-setup\<id>.result`, so another game that needs the same
+  one does not run it again, and a failing installer is not retried at every
+  start. The game starts after them whatever they return.
+- Left out, with the reason on the game's page: DirectX (Madeira's own Direct3D
+  covers it), Visual C++ 2015 to 2022 (the build carries that runtime), the .NET
+  Framework installers, and `.msi` packages while the build has no `msiexec.exe`.
+  A redistributable without an installer (DOSBox, ScummVM files) is downloaded only.
+- Repair installed files downloads them again if needed and runs the game's
+  installers again at its next start. A game installed before this needs a Repair
+  to get them.
+
+## Galaxy game services
+
+Games built with GOG's Galaxy SDK talk to GOG's client on `127.0.0.1:9977` for
+their sign-in, achievements, stats, leaderboards and play time. While such a game
+runs, Madeira answers there itself (`SwiftGOG/Galaxy`, ported from Playport): the
+game's own client id and secret come from its build manifest, GOG mints a token
+for that game from Madeira's GOG sign-in (`without_new_session=1`, so Madeira's own
+tokens stay as they are), and only that token goes to the game. Achievements and
+stats go to `gameplay.gog.com` as GOG Galaxy sends them. Without a GOG sign-in, or
+when the port is taken, the game runs offline as it would without GOG's client.
+
+Some SDK versions first ask Windows to start the `GalaxyCommunication` service, so
+the prefix gets one: a do-nothing service (`build/gog-galaxy-service`, built into
+`aarch64-windows/madeira-galaxy-service.exe`) copied to
+`C:\ProgramData\GOG.com\Galaxy\redists\GalaxyCommunication.exe` and registered in
+`system.reg` before the start, the same path GOG's client and Heroic's comet use.
+`env.MADEIRA_GOG_GALAXY = 0` turns the services off. Log tag `[galaxy]`.
+
 ## Not supported yet
 
 - Generation 1 builds, which some older games still have. Madeira says so
   instead of downloading.
-- GOG Galaxy features: cloud saves, achievements, and online services that need
-  the Galaxy client.
-- GOG's redistributable installers (DirectX, Visual C++). Madeira's own Visual
-  C++ runtime covers the common case.
+- Galaxy cloud saves, and online multiplayer through Galaxy's peer library.
+- Redistributables that need Windows Installer, while the build has none.
 - Delta patches. An update downloads changed files whole.
 - A language or branch picker.
 
@@ -90,3 +129,12 @@ contributors. Relevant sources include `gogdl/auth.py`, `gogdl/api.py`,
 `gogdl/dl/dl_utils.py`, `gogdl/dl/objects/v2.py`, `gogdl/dl/managers/v2.py`,
 `gogdl/dl/workers/task_executor.py` and `gogdl/launch.py`. No gogdl code is
 included. The app uses Apple frameworks and adds no dependency.
+
+The Galaxy service (`SwiftGOG/Galaxy/GalaxyWire.swift`, `GalaxyService.swift`,
+`GalaxyListener.swift`, and `GOGGalaxyClient` in `GalaxySupport.swift`) is
+Playport's (github.com/playportdev/playport at 412de5f, `app/Packages/GOGClient`),
+as intraducine carried it to Madeira in willfaust/Madeira #479: copyright the
+Playport authors, GPL-3.0-or-later with the Madeira Converter Exception, version 1.
+Madeira's changes: type names prefixed `Galaxy`, no ContentKit package, the token
+from Madeira's own GOG sign-in, and two compile fixes. Its 14 tests pass against
+this copy. Which redistributables are skipped follows Playport's GOGDependencies.

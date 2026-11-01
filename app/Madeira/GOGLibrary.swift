@@ -45,6 +45,13 @@ struct GOGInstalledGame: Codable, Sendable {
     var installBytes: Int64
     /// DLC whose files were installed with the game.
     var dlc: [String]
+    /// The build's Galaxy client, for GOG's game services while it runs (GOGGalaxy); nil: none.
+    var galaxy: GOGGalaxyClient?
+    /// Redistributables' installers the game's first start runs (GOGSetup); nil in a record
+    /// from before Madeira installed them (Repair adds them).
+    var setup: [GOGSetupProgram]?
+    /// Redistributables left out, and why.
+    var setupNotes: [GOGSetupNote]?
     var programPath: String { folder + "/" + launchExe }
     /// The working folder as a C:\ path, or nil.
     var workingWindowsPath: String? {
@@ -273,6 +280,14 @@ struct GOGInstalledGame: Codable, Sendable {
     func checkForUpdate(_ id: String) async {
         guard signedIn, installed[id] != nil, let build = try? await api.latestBuild(id) else { return }
         latestBuild[id] = build.buildID
+        // An install from before Madeira kept the build's Galaxy client: read it from the same build.
+        if let record = installed[id], record.setup == nil, record.galaxy == nil, record.buildID == build.buildID,
+           let data = try? await api.buildManifest(build), let json = try? GOGCodec.json(data, what: "build"),
+           let client = (try? GOGBuildManifest.parse(json))?.galaxy {
+            installed[id]?.galaxy = client
+            writeInstalled()
+            GOGLog.event("[gog-library] galaxy client read id=\(id)")
+        }
     }
 
     func updateAvailable(_ id: String) -> Bool {
@@ -404,18 +419,21 @@ struct GOGInstalledGame: Codable, Sendable {
                 }
             try? FileManager.default.createDirectory(at: Self.filesURL(id).deletingLastPathComponent(), withIntermediateDirectories: true)
             try? JSONEncoder().encode(files).write(to: Self.filesURL(id), options: .atomic)
+            let setup = try await installRedistributables(id, manifest: manifest, folder: folder, repair: kind == .repair, step: step)
             try? FileManager.default.removeItem(at: Self.journalURL(id).deletingPathExtension().appendingPathExtension("folder"))
             let task = try Self.playTask(folder: Self.drive.appendingPathComponent(folder, isDirectory: true), product: id)
             let finished = GOGInstalledGame(
                 productID: id, title: title, folder: folder, buildID: build.buildID, versionName: build.versionName,
                 language: language, launchExe: task.path, arguments: task.arguments, workingDir: task.workingDir,
-                installBytes: result.installBytes, dlc: dlc)
+                installBytes: result.installBytes, dlc: dlc, galaxy: manifest.galaxy, setup: setup.run, setupNotes: setup.notes)
             installed[id] = finished
             latestBuild[id] = build.buildID
             writeInstalled()
             downloads[id] = nil
+            // Repair also runs the game's redistributable installers again at its next start.
+            if kind == .repair { GOGSetup.forget(setup.run.map(\.id), drive: Self.drive) }
             await LibraryModel.shared.upsertGOG(finished, previous: record, cover: game(id)?.cover)
-            GOGLog.event("[gog-download] done id=\(id) written=\(result.filesWritten) kept=\(result.filesKept) fetched=\(result.bytesFetched)")
+            GOGLog.event("[gog-download] done id=\(id) written=\(result.filesWritten) kept=\(result.filesKept) fetched=\(result.bytesFetched) galaxy=\(manifest.galaxy == nil ? 0 : 1) setup=\(setup.run.count) setup-skipped=\(setup.notes.count)")
         } catch {
             if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
                 if downloads[id] != nil { downloads[id]?.state = .paused }
@@ -427,6 +445,63 @@ struct GOGInstalledGame: Codable, Sendable {
         }
         active = nil
         pump()
+    }
+
+    // MARK: Redistributables
+
+    /// Downloads the build's redistributables into the game's folder and says which
+    /// installers its first start runs (GOGSetup). A failure here does not fail the
+    /// game's download: the game is kept, the page says so and Repair tries again. Only a
+    /// pause or cancel is thrown.
+    private func installRedistributables(_ id: String, manifest: GOGBuildManifest, folder: String, repair: Bool,
+                                         step: (String) -> Void) async throws -> GOGSetup.Plan {
+        guard !manifest.dependencies.isEmpty else { return GOGSetup.Plan() }
+        do {
+            step("Checking the game's redistributables")
+            let repository = try await api.dependencyRepository()
+            var plan = GOGSetup.plan(manifest.dependencies, repository: repository, hasMsiexec: DockInstallers.bundleHasMsiexec)
+            var files: [GOGFile] = []
+            for (index, dependency) in plan.download.enumerated() {
+                try Task.checkCancellation()
+                step("Getting redistributable \(index + 1) of \(plan.download.count)")
+                let data = try await api.dependencyDepot(dependency.manifest)
+                files += try await Task.detached(priority: .userInitiated) { try GOGDepot.files(data, product: "redist") }.value
+            }
+            if !files.isEmpty {
+                step("Downloading redistributables")
+                let api = self.api
+                let links = GOGLinks { _ in try await api.dependencyLinks() }
+                let result = try await downloader.install(
+                    files: files, build: id + "#redist#" + plan.download.map(\.manifest).joined(separator: ","), links: links,
+                    folder: Self.drive.appendingPathComponent(folder, isDirectory: true), previous: nil, verifyAll: repair,
+                    journal: Self.journalURL(id + "-redist")) { progress in
+                        Task { @MainActor in GOGLibrary.shared.downloads[id]?.progress = progress }
+                    }
+                GOGLog.event("[gog-setup] files id=\(id) written=\(result.filesWritten) kept=\(result.filesKept)")
+            }
+            GOGLog.event("[gog-setup] plan id=\(id) ids=\(manifest.dependencies.joined(separator: ",")) run=\(plan.run.map(\.id).joined(separator: ",")) skipped=\(plan.notes.map(\.id).joined(separator: ","))")
+            plan.download = []
+            return plan
+        } catch {
+            // A pause or cancel stops the whole download, as during the game's own files.
+            if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
+            let reason = (error as? GOGAPIError)?.reason ?? (error as? URLError).map { "url-\($0.code.rawValue)" } ?? String(describing: type(of: error))
+            GOGLog.event("[gog-setup] redistributables not downloaded id=\(id) reason=\(reason)")
+            var plan = GOGSetup.Plan()
+            plan.notes = [GOGSetupNote(id: "", name: "Redistributables",
+                                       note: "Could not be downloaded this time. Repair installed files tries again.")]
+            return plan
+        }
+    }
+
+    /// The batch lines a GOG game's start runs before the game (LibraryEntry.setGOGSetup), or nil.
+    func setupBatch(for entry: LibraryEntry) -> String? {
+        guard let product = entry.gogProductID, let record = installed[product], let programs = record.setup, !programs.isEmpty else { return nil }
+        let folder = "C:\\" + record.folder.replacingOccurrences(of: "/", with: "\\")
+        let lines = GOGSetup.batchLines(programs, folder: folder, drive: Self.drive)
+        guard !lines.isEmpty else { return nil }
+        GOGLog.event("[gog-setup] this start runs installers id=\(product) count=\(lines.filter { $0.hasPrefix("echo [gog-setup]") }.count)")
+        return lines.joined(separator: "\r\n")
     }
 
     // MARK: Play task

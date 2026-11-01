@@ -1298,6 +1298,27 @@ static void *ios_pool_warmer_thread( void *arg )
                             (unsigned long long)vmi.compressed >> 20,
                             (unsigned long long)vmi.external >> 20,
                             (unsigned long long)vmi.reusable >> 20, cycle);
+                    /* [fp-graphics]: phys_footprint also counts memory that internal and
+                     * compressed do not: Metal/IOSurface objects (purgeable non-volatile
+                     * and graphics-tagged ledgers) and IOKit mappings. Project Zomboid
+                     * reached 8 GB at its menu with only ~4.4 GB internal + compressed. */
+                    if (vmi_cnt >= TASK_VM_INFO_REV4_COUNT &&
+                        (!ios_lean_diag_virtual() || cycle == 1 || (cycle % 10) == 0))
+                    {
+                        unsigned long long known = (unsigned long long)vmi.internal + vmi.compressed;
+                        dprintf(2, "[fp-graphics] purgeable-nonvolatile=%llu MB (+%llu compressed) purgeable-volatile=%llu MB "
+                                "graphics-tag=%llu MB (+%llu compressed) media-tag=%llu MB neural-tag=%llu MB "
+                                "unexplained=%lld MB limit-left=%llu MB (cycle=%u)\n",
+                                (unsigned long long)vmi.ledger_purgeable_nonvolatile >> 20,
+                                (unsigned long long)vmi.ledger_purgeable_novolatile_compressed >> 20,
+                                (unsigned long long)vmi.ledger_purgeable_volatile >> 20,
+                                (unsigned long long)vmi.ledger_tag_graphics_footprint >> 20,
+                                (unsigned long long)vmi.ledger_tag_graphics_footprint_compressed >> 20,
+                                (unsigned long long)vmi.ledger_tag_media_footprint >> 20,
+                                (unsigned long long)vmi.ledger_tag_neural_footprint >> 20,
+                                ((long long)vmi.phys_footprint - (long long)known) >> 20,
+                                (unsigned long long)vmi.limit_bytes_remaining >> 20, cycle);
+                    }
                 }
             }
             /* ml566: WHEN does the host malloc zone become corrupt?
@@ -10129,7 +10150,12 @@ static ULONG_PTR get_wow_user_space_limit(void)
  * address map, see ios_wow_band), below the CEF pools [0x7400000000,
  * 0x7c00000000) and the FEX band [0x7c00000000, 0x8000000000).
  */
-#define IOS_WOW_MAX_WINDOWS 8
+/* 10 (2026-10-31): Ubisoft Connect wants nine or more 32-bit programs at once
+ * (client, two services, Chromium's GPU, network and storage helpers and its
+ * renderers); with eight, the ninth found the registry full. The band and its
+ * spill range [0x7100000000, 0x7b00000000) hold at most ten 4 GB-aligned
+ * candidates, so ten registry entries let every free one be used. */
+#define IOS_WOW_MAX_WINDOWS 10
 #define IOS_WOW_CEF_POOLS_START ((ULONG_PTR)0x7400000000)
 #define IOS_WOW_FEX_BAND_END    ((ULONG_PTR)0x8000000000)
 
@@ -17368,6 +17394,11 @@ static struct ios_smc_code_map *ios_smc_map_for( uintptr_t addr )
 
 /* [addr, addr + len) lies in one 16 KB page that FEX trapped and holds no
  * translated code. Called before and after the store. */
+/* [smc-why]: why the last ios_smc_write_ok on this thread said no (IOS_SMC_WHY_*). */
+enum { IOS_SMC_WHY_SPAN = 1, IOS_SMC_WHY_NO_MAP, IOS_SMC_WHY_SLOT, IOS_SMC_WHY_UNARMED, IOS_SMC_WHY_CODE,
+       IOS_SMC_WHY_UNKNOWN_PAGE, IOS_SMC_WHY_ALIAS, IOS_SMC_WHY_INSN, IOS_SMC_WHY_UNDECODED, IOS_SMC_WHY_COUNT };
+static __thread int ios_smc_why;
+
 int ios_smc_write_ok( uintptr_t addr, size_t len )
 {
     struct ios_smc_code_map *map;
@@ -17376,17 +17407,51 @@ int ios_smc_write_ok( uintptr_t addr, size_t len )
     unsigned g, g_end;
     uint64_t bits[4];
 
+    ios_smc_why = IOS_SMC_WHY_SPAN;
     if (!len || len > IOS_SMC_PAGE || ((addr + len - 1) & ~(uintptr_t)(IOS_SMC_PAGE - 1)) != page) return 0;
+    ios_smc_why = IOS_SMC_WHY_NO_MAP;
     if (!(map = ios_smc_map_for( addr ))) return 0;
     slot = &map->slots[(page / IOS_SMC_PAGE) % IOS_SMC_SLOTS];
+    ios_smc_why = IOS_SMC_WHY_SLOT;
     if (__atomic_load_n( &slot->page, __ATOMIC_ACQUIRE ) != page) return 0;
+    ios_smc_why = IOS_SMC_WHY_UNARMED;
     if (!(__atomic_load_n( &slot->flags, __ATOMIC_ACQUIRE ) & IOS_SMC_ARMED)) return 0;
     for (g = 0; g < 4; g++) bits[g] = __atomic_load_n( &slot->bits[g], __ATOMIC_ACQUIRE );
+    ios_smc_why = IOS_SMC_WHY_SLOT;
     if (__atomic_load_n( &slot->page, __ATOMIC_ACQUIRE ) != page) return 0;
+    /* All ones: the page was claimed outside a full-page invalidation, so which
+     * bytes hold code is unknown (not that every byte does). */
+    ios_smc_why = (bits[0] & bits[1] & bits[2] & bits[3]) == ~0ull ? IOS_SMC_WHY_UNKNOWN_PAGE : IOS_SMC_WHY_CODE;
     g_end = (unsigned)((addr + len - 1 - page) / 64);
     for (g = (unsigned)((addr - page) / 64); g <= g_end; g++)
         if (bits[g / 64] & (1ull << (g % 64))) return 0;
+    ios_smc_why = 0;
     return 1;
+}
+
+/* [smc-why]: the fault handler sends a store in a plain view to FEX's path.
+ * why < 0: take the reason from the last ios_smc_write_ok on this thread. */
+void ios_smc_count_refusal( int why )
+{
+    static const char *names[IOS_SMC_WHY_COUNT] = { "?", "crosses-page", "no-map", "slot-taken", "not-armed",
+        "code-bytes", "unknown-page", "alias-or-burst", "insn", "undecoded" };
+    static unsigned long counts[IOS_SMC_WHY_COUNT], total;
+    unsigned long n;
+
+    if (why < 0) why = ios_smc_why;
+    if (why <= 0 || why >= IOS_SMC_WHY_COUNT || why == IOS_SMC_WHY_NO_MAP) return;
+    __atomic_add_fetch( &counts[why], 1, __ATOMIC_RELAXED );
+    n = __atomic_add_fetch( &total, 1, __ATOMIC_RELAXED );
+    if (n == 1 || n == 1000 || !(n % 20000))
+    {
+        char line[512];
+        int i, len = snprintf( line, sizeof(line), "[smc-why] %lu stores in plain JIT pages sent to FEX:", n );
+        for (i = 1; i < IOS_SMC_WHY_COUNT && len > 0 && len < (int)sizeof(line); i++)
+            if (i != IOS_SMC_WHY_NO_MAP)
+                len += snprintf( line + len, sizeof(line) - len, " %s=%lu", names[i],
+                                 __atomic_load_n( &counts[i], __ATOMIC_RELAXED ) );
+        dprintf( 2, "%s (emulated %lu)\n", line, (unsigned long)ios_smc_emulated );
+    }
 }
 
 static uint64_t ios_smc_ticks( void )
@@ -25585,6 +25650,70 @@ static int ios_avail_phys_chromium( void )
 }
 
 
+/* Launchers (2026-10-31): `exe-phys-mb = upc.exe:479;Other.exe:600` in the
+ * game's own file reports N MB of physical memory, total and available, to the
+ * named programs only (last path component, any case). The reason is Chromium's
+ * renderer cap: a browser process keeps at most physical MB / 2 / 60 renderers
+ * (at least 3), so 479 MB caps Ubisoft Connect's upc.exe at three, where it
+ * started six on build 58 and ran out of 4 GB windows ("BOOT FAILED at stage
+ * 'guest-window-reserve'"). Its CEF setup ignores --renderer-process-limit on
+ * its command line. Only the browser process should be named: the renderers
+ * size V8's heap from the same figure. Returns the bytes, or 0 when the calling
+ * pseudo-process is not named (or the key is unset). */
+static unsigned long long ios_exe_phys_bytes( void )
+{
+    static char spec[512], read_for[1024];
+    static int read;
+    const char *game = getenv( "MADEIRA_CFG_GAME" );
+    PEB *peb;
+    RTL_USER_PROCESS_PARAMETERS *pp;
+    const WCHAR *path;
+    const char *t;
+    size_t len, base = 0, k;
+
+    /* per game: read again when the game whose lines apply changes */
+    if (!game) game = "";
+    if (!read || strncmp( read_for, game, sizeof(read_for) - 1 ))
+    {
+        snprintf( read_for, sizeof(read_for), "%s", game );
+        if (!madeira_cfg_get( "exe-phys-mb", spec, sizeof(spec) )) spec[0] = 0;
+        read = 1;
+        if (spec[0]) dprintf( 2, "[exe-phys] reported physical memory per program: %s (exe-phys-mb)\n", spec );
+    }
+    if (!spec[0] || !(peb = ios_jit_current_peb()) || !(pp = peb->ProcessParameters) ||
+        !(path = pp->ImagePathName.Buffer)) return 0;
+    len = pp->ImagePathName.Length / sizeof(WCHAR);
+    for (k = 0; k < len; k++) if (path[k] == '\\' || path[k] == '/') base = k + 1;
+    for (t = spec; *t; )
+    {
+        const char *colon, *end = strchr( t, ';' );
+        size_t n, el = end ? (size_t)(end - t) : strlen( t );
+
+        while (el && *t == ' ') { t++; el--; }
+        colon = memchr( t, ':', el );
+        n = colon ? (size_t)(colon - t) : 0;
+        if (n && n == len - base)
+        {
+            for (k = 0; k < n; k++)
+            {
+                WCHAR c = path[base + k];
+                char d = t[k];
+                if (c >= 'A' && c <= 'Z') c += 32;
+                if (d >= 'A' && d <= 'Z') d += 32;
+                if (c != (WCHAR)(unsigned char)d) break;
+            }
+            if (k == n)
+            {
+                unsigned long long mb = strtoull( colon + 1, NULL, 10 );
+                return mb >= 64 && mb <= 65536 ? mb << 20 : 0;
+            }
+        }
+        if (!end) break;
+        t = end + 1;
+    }
+    return 0;
+}
+
 /***********************************************************************
  *           ios_avail_phys
  *
@@ -25652,6 +25781,11 @@ unsigned long long ios_avail_phys( unsigned long long host_free )
         }
         band = now;
         if (left < host_free) value = left;
+    }
+    /* exe-phys-mb: never more available than the total that program is told */
+    {
+        unsigned long long own = ios_exe_phys_bytes();
+        if (own && value > own) value = own;
     }
     /* madeira-bcd: avail-phys-cef-mb, the Chromium browsers only (see above) */
     if (cef && value > cef && ios_avail_phys_chromium())
@@ -25821,6 +25955,18 @@ void virtual_get_system_info( SYSTEM_BASIC_INFORMATION *info, BOOL wow64 )
                      ((unsigned long long)info->MmHighestPhysicalPage * page_size) >> 20,
                      cached_limit >> 20 ); }
             info->MmHighestPhysicalPage = max( 1, cached_limit / page_size );
+        }
+        /* exe-phys-mb (ios_exe_phys_bytes): this program alone is told N MB */
+        {
+            unsigned long long own = ios_exe_phys_bytes();
+            static int said;
+            if (own && own / page_size < (unsigned long long)info->MmHighestPhysicalPage)
+            {
+                if (said++ < 4)
+                    dprintf( 2, "[exe-phys] reporting %llu MB of physical memory to this program "
+                             "(exe-phys-mb)\n", own >> 20 );
+                info->MmHighestPhysicalPage = max( 1, own / page_size );
+            }
         }
     }
 #elif defined(_SC_PHYS_PAGES)
@@ -35241,6 +35387,66 @@ NTSTATUS WINAPI NtUnlockVirtualMemory( HANDLE process, PVOID *addr, SIZE_T *size
 }
 
 
+/* gmod.exe and its Chromium helpers (same image) */
+static int ios_file_watch_is_gmod(void)
+{
+    static const WCHAR gmod[] = {'\\','g','m','o','d','.','e','x','e'};
+    const RTL_USER_PROCESS_PARAMETERS *params = NtCurrentTeb()->Peb->ProcessParameters;
+    const UNICODE_STRING *image = params ? &params->ImagePathName : NULL;
+    size_t i, n = ARRAY_SIZE(gmod);
+    const WCHAR *tail;
+
+    if (!image || !image->Buffer || image->Length / sizeof(WCHAR) < n) return 0;
+    tail = image->Buffer + image->Length / sizeof(WCHAR) - n;
+    for (i = 0; i < n; i++)
+        if ((tail[i] >= 'A' && tail[i] <= 'Z' ? tail[i] + 32 : tail[i]) != gmod[i]) return 0;
+    return 1;
+}
+
+/* madeira-bcd: follow one file through open, size query, section and map.
+ * MADEIRA_FILE_WATCH names a part of the path and watches it in every process;
+ * unset, only gmod.exe processes watch "icudtl.dat", the Chromium data file
+ * Garry's Mod's helpers fail to map while no section or map call fails, so
+ * other programs pay nothing. 0 turns it off; the log stops after 400 lines.
+ * Opens are matched on the name asked for, the rest on the handle's file. */
+void ios_file_watch_note( const char *what, unsigned int status, HANDLE handle,
+                          const OBJECT_ATTRIBUTES *attr, ULONGLONG a, ULONGLONG b )
+{
+    static int count;
+    const char *word = getenv( "MADEIRA_FILE_WATCH" );
+    char path[PATH_MAX];
+    int fd = -1, needs_close = 0;
+
+    if (!word || !*word)
+    {
+        if (!ios_file_watch_is_gmod()) return;
+        word = "icudtl.dat";
+    }
+    else if (word[0] == '0' && !word[1]) return;
+    path[0] = 0;
+    if (attr)
+    {
+        const UNICODE_STRING *name = attr->ObjectName;
+        size_t i, n = name && name->Buffer ? name->Length / sizeof(WCHAR) : 0;
+
+        if (n > sizeof(path) - 1) n = sizeof(path) - 1;
+        for (i = 0; i < n; i++) path[i] = name->Buffer[i] < 0x80 ? (char)name->Buffer[i] : '?';
+        path[n] = 0;
+    }
+    else if (handle && !server_get_unix_fd( handle, 0, &fd, &needs_close, NULL, NULL ))
+    {
+        if (fcntl( fd, F_GETPATH, path ) == -1) path[0] = 0;
+        if (needs_close) close( fd );
+    }
+    if (!path[0] || !strcasestr( path, word )) return;
+    if (__atomic_add_fetch( &count, 1, __ATOMIC_RELAXED ) > 400) return;
+    dprintf( STDERR_FILENO, "[file-watch] %s status=%08x pid=%04x tid=%04x wow64=%d handle=%p a=0x%llx b=0x%llx path=%s\n",
+             what, status, (unsigned int)HandleToULong( NtCurrentTeb()->ClientId.UniqueProcess ),
+             (unsigned int)HandleToULong( NtCurrentTeb()->ClientId.UniqueThread ), is_wow64(),
+             handle, (unsigned long long)a, (unsigned long long)b, path );
+}
+
+
 /* madeira-bcd: a failing NtCreateSection / NtMapViewOfSection(Ex) is logged
  * with its status and the file's path, so a Chromium child's "Couldn't mmap
  * icu data file" names the call that failed (Garry's Mod). Failures are rare;
@@ -35254,7 +35460,12 @@ void ios_map_fail_note( const char *what, unsigned int status, HANDLE handle,
     char path[PATH_MAX] = "?";
     int fd = -1, needs_close = 0;
 
-    if (NT_SUCCESS(status) || status == STATUS_CONFLICTING_ADDRESSES) return;
+    if (NT_SUCCESS(status))
+    {
+        ios_file_watch_note( what, status, handle, NULL, (ULONG_PTR)addr, size );
+        return;
+    }
+    if (status == STATUS_CONFLICTING_ADDRESSES) return;
     if ((env = getenv( "MADEIRA_MAP_FAIL_LOG" )) && env[0] == '0') return;
     if (__atomic_add_fetch( &count, 1, __ATOMIC_RELAXED ) > 200) return;
     if (handle && !server_get_unix_fd( handle, 0, &fd, &needs_close, NULL, NULL ))

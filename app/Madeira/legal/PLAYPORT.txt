@@ -3,3 +3,5 @@ Source: https://github.com/playportdev/playport/tree/412de5f8c0bdd26d84e0127eb57
 Playport-authored additions are GPL-3.0-or-later with the Madeira Converter
 Exception, version 1. Original source headers and attribution are preserved.
 The exception and corresponding source notices are included in app/Packages.
+This includes the GOG Galaxy game service in app/Madeira/SwiftGOG/Galaxy
+(from Playport's app/Packages/GOGClient).

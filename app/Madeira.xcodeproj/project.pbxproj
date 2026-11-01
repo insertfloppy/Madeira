@@ -32,6 +32,12 @@
 		A1007B21 /* LauncherGames.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2007B21 /* LauncherGames.swift */; };
 		A1006A03 /* SwiftGOG/GOGAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2006A03 /* GOGAPI.swift */; };
 		A1006A04 /* SwiftGOG/GOGDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2006A04 /* GOGDownloader.swift */; };
+		A1006A05 /* SwiftGOG/GOGSetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2006A05 /* GOGSetup.swift */; };
+		A1006A06 /* SwiftGOG/GOGGalaxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2006A06 /* GOGGalaxy.swift */; };
+		A1006A07 /* SwiftGOG/Galaxy/GalaxyWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2006A07 /* GalaxyWire.swift */; };
+		A1006A08 /* SwiftGOG/Galaxy/GalaxyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2006A08 /* GalaxyService.swift */; };
+		A1006A09 /* SwiftGOG/Galaxy/GalaxyListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2006A09 /* GalaxyListener.swift */; };
+		A1006A0A /* SwiftGOG/Galaxy/GalaxySupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2006A0A /* GalaxySupport.swift */; };
 		A1006B01 /* EALibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2006B01 /* EALibrary.swift */; };
 		A1006B02 /* EAGames.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2006B02 /* EAGames.swift */; };
 		A1006B03 /* SwiftEA/EAAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2006B03 /* EAAPI.swift */; };
@@ -183,6 +189,10 @@
 		A1000914 /* LibraryPrefs.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000914 /* LibraryPrefs.swift */; };
 		A1000990 /* GameIniFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000990 /* GameIniFiles.swift */; };
 		A1000991 /* GameDllOverrides.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000991 /* GameDllOverrides.swift */; };
+		A1009C01 /* GameSetupShare.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2009C01 /* GameSetupShare.swift */; };
+		A1009C02 /* GameMods.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2009C02 /* GameMods.swift */; };
+		A1009C04 /* SteamAchievements.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2009C04 /* SteamAchievements.swift */; };
+		A1009C03 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A2009C03 /* Localizable.xcstrings */; };
 		A1000992 /* WineRegistryEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000992 /* WineRegistryEditor.swift */; };
 		A1000208 /* GameProfiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000208 /* GameProfiles.swift */; };
 		A1000911 /* GameRecommendations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000911 /* GameRecommendations.swift */; };
@@ -279,6 +289,12 @@
 		A2007B21 /* LauncherGames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LauncherGames.swift"; sourceTree = "<group>"; };
 		A2006A03 /* GOGAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftGOG/GOGAPI.swift"; sourceTree = "<group>"; };
 		A2006A04 /* GOGDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftGOG/GOGDownloader.swift"; sourceTree = "<group>"; };
+		A2006A05 /* GOGSetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftGOG/GOGSetup.swift"; sourceTree = "<group>"; };
+		A2006A06 /* GOGGalaxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftGOG/GOGGalaxy.swift"; sourceTree = "<group>"; };
+		A2006A07 /* GalaxyWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftGOG/Galaxy/GalaxyWire.swift"; sourceTree = "<group>"; };
+		A2006A08 /* GalaxyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftGOG/Galaxy/GalaxyService.swift"; sourceTree = "<group>"; };
+		A2006A09 /* GalaxyListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftGOG/Galaxy/GalaxyListener.swift"; sourceTree = "<group>"; };
+		A2006A0A /* GalaxySupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftGOG/Galaxy/GalaxySupport.swift"; sourceTree = "<group>"; };
 		A2006B01 /* EALibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EALibrary.swift"; sourceTree = "<group>"; };
 		A2006B02 /* EAGames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EAGames.swift"; sourceTree = "<group>"; };
 		A2006B03 /* EAAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftEA/EAAPI.swift"; sourceTree = "<group>"; };
@@ -446,6 +462,10 @@
 		A2000914 /* LibraryPrefs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryPrefs.swift; sourceTree = "<group>"; };
 		A2000990 /* GameIniFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameIniFiles.swift; sourceTree = "<group>"; };
 		A2000991 /* GameDllOverrides.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameDllOverrides.swift; sourceTree = "<group>"; };
+		A2009C01 /* GameSetupShare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameSetupShare.swift; sourceTree = "<group>"; };
+		A2009C02 /* GameMods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameMods.swift; sourceTree = "<group>"; };
+		A2009C04 /* SteamAchievements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteamAchievements.swift; sourceTree = "<group>"; };
+		A2009C03 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		A2000992 /* WineRegistryEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WineRegistryEditor.swift; sourceTree = "<group>"; };
 		A2000208 /* GameProfiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameProfiles.swift; sourceTree = "<group>"; };
 		A2000911 /* GameRecommendations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameRecommendations.swift; sourceTree = "<group>"; };
@@ -573,6 +593,12 @@
 				A2007B21 /* LauncherGames.swift */,
 				A2006A03 /* GOGAPI.swift */,
 				A2006A04 /* GOGDownloader.swift */,
+				A2006A05 /* GOGSetup.swift */,
+				A2006A06 /* GOGGalaxy.swift */,
+				A2006A07 /* GalaxyWire.swift */,
+				A2006A08 /* GalaxyService.swift */,
+				A2006A09 /* GalaxyListener.swift */,
+				A2006A0A /* GalaxySupport.swift */,
 				A2006B01 /* EALibrary.swift */,
 				A2006B02 /* EAGames.swift */,
 				A2006B03 /* EAAPI.swift */,
@@ -659,6 +685,10 @@
 				A2000914 /* LibraryPrefs.swift */,
 				A2000990 /* GameIniFiles.swift */,
 				A2000991 /* GameDllOverrides.swift */,
+				A2009C01 /* GameSetupShare.swift */,
+				A2009C02 /* GameMods.swift */,
+				A2009C04 /* SteamAchievements.swift */,
+				A2009C03 /* Localizable.xcstrings */,
 				A2000992 /* WineRegistryEditor.swift */,
 				A2000208 /* GameProfiles.swift */,
 				A2000911 /* GameRecommendations.swift */,
@@ -875,6 +905,11 @@
 			knownRegions = (
 				en,
 				Base,
+				de,
+				es,
+				ko,
+				"pt-BR",
+				ru,
 			);
 			mainGroup = A4000001;
 			packageReferences = (
@@ -896,6 +931,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000022 /* nls in Resources */,
+				A1009C03 /* Localizable.xcstrings in Resources */,
 				A1000032 /* aarch64-windows in Resources */,
 				A10000F1 /* legal in Resources */,
 				A1000080 /* arm64ec-windows in Resources */,
@@ -991,6 +1027,12 @@
 				A1007B21 /* LauncherGames.swift in Sources */,
 				A1006A03 /* SwiftGOG/GOGAPI.swift in Sources */,
 				A1006A04 /* SwiftGOG/GOGDownloader.swift in Sources */,
+				A1006A05 /* SwiftGOG/GOGSetup.swift in Sources */,
+				A1006A06 /* SwiftGOG/GOGGalaxy.swift in Sources */,
+				A1006A07 /* SwiftGOG/Galaxy/GalaxyWire.swift in Sources */,
+				A1006A08 /* SwiftGOG/Galaxy/GalaxyService.swift in Sources */,
+				A1006A09 /* SwiftGOG/Galaxy/GalaxyListener.swift in Sources */,
+				A1006A0A /* SwiftGOG/Galaxy/GalaxySupport.swift in Sources */,
 				A1006B01 /* EALibrary.swift in Sources */,
 				A1006B02 /* EAGames.swift in Sources */,
 				A1006B03 /* SwiftEA/EAAPI.swift in Sources */,
@@ -1073,6 +1115,9 @@
 				A1000914 /* LibraryPrefs.swift in Sources */,
 				A1000990 /* GameIniFiles.swift in Sources */,
 				A1000991 /* GameDllOverrides.swift in Sources */,
+				A1009C01 /* GameSetupShare.swift in Sources */,
+				A1009C02 /* GameMods.swift in Sources */,
+				A1009C04 /* SteamAchievements.swift in Sources */,
 				A1000992 /* WineRegistryEditor.swift in Sources */,
 				A1000208 /* GameProfiles.swift in Sources */,
 				A1000911 /* GameRecommendations.swift in Sources */,

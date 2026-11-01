@@ -196,12 +196,22 @@ extension GameRecommendations {
     private static func fileHash(_ text: String) -> String { String(LibraryPrefs.stableHash(text), radix: 16) }
 
     /// Whether a C:\ path exists in drive_c; the name's case does not matter, as on Windows.
+    /// A folder on an external drive (C:\External\<name>\...) is read through the
+    /// drive's own opened URL, not the link in drive_c.
     static func driveFileExists(_ windowsPath: String) -> Bool {
         let path = windowsPath.replacingOccurrences(of: "\\", with: "/")
         guard path.lowercased().hasPrefix("c:/") else { return false }
-        let url = LibraryModel.drive.appendingPathComponent(String(path.dropFirst(3)))
-        let name = url.lastPathComponent.lowercased()
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)) ?? []
-        return names.contains { $0.lowercased() == name }
+        let relative = String(path.dropFirst(3))
+        guard let cut = relative.lastIndex(of: "/") else {
+            return names(in: LibraryModel.drive).contains { $0.lowercased() == relative.lowercased() }
+        }
+        let parent = String(relative[..<cut]), name = relative[relative.index(after: cut)...].lowercased()
+        let folder = ExternalDrives.driveName(library: parent) != nil
+            ? (try? ExternalDrives.nativeURL(parent)) : LibraryModel.drive.appendingPathComponent(parent)
+        return folder.map { names(in: $0).contains { $0.lowercased() == name } } ?? false
+    }
+
+    private static func names(in folder: URL) -> [String] {
+        (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
     }
 }

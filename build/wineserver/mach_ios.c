@@ -1198,15 +1198,22 @@ static int ios_child_write_allowed( const struct process *process )
 static int ios_local_write_target( const struct process *process )
 {
     static char targets[256];
+    static char read_for[1024];
     static int targets_read;
+    const char *game = getenv( "MADEIRA_CFG_GAME" );
     char name[64];
     int n = 0, k, base = 0, len;
     const char *t;
 
     if (!current || process->unix_pid != getpid() || !process->image) return 0;
-    if (!targets_read)
+    /* The list is per game: read it again when the game whose lines apply
+     * changes, so one app run with several sessions never keeps the first
+     * game's list (or an empty one) for the next game. */
+    if (!game) game = "";
+    if (!targets_read || strncmp( read_for, game, sizeof(read_for) - 1 ))
     {
         targets_read = 1;
+        snprintf( read_for, sizeof(read_for), "%s", game );
         if (!madeira_cfg_get( "local-write-target", targets, sizeof(targets) )) targets[0] = 0;
         fprintf( stderr, "ds3-coop: local pseudo-process writes %s%s\n",
                  targets[0] ? "ENABLED for " : "denied (local-write-target unset)", targets );

@@ -1,0 +1,57 @@
+FEXCore: 32-bit Grp1 opcode 0x82 ADD/OR/AND/SUB/XOR (Ubisoft Connect)
+
+0x82 is the 32-bit-only alias of 0x80 (Grp1 Eb,Ib). The x86 tables decode
+it (PrimaryGroup_ArchSelect_LUT, the 32-bit column) and route ADD, OR, AND,
+SUB and XOR to SecondaryALUOp, but SecondaryALUOp only had cases for 0x80,
+0x81 and 0x83: those five fell to the default, logged
+"Unknown ALU Op: 0x10/0x11/0x14/0x15/0x16" and raised c000001d (illegal
+instruction). ADC, SBB and CMP were dispatched elsewhere and worked.
+Device logs on build 58 (2026-10-31) show the five messages in every
+Ubisoft Connect run (upc.exe and its helpers). Reported by the BCD fork's
+0.1.625 notes; written fresh here (BCD's code is GPL-3.0-only).
+
+Five case labels next to the 0x83 ones. Only 32-bit code can encode 0x82
+(it is invalid in 64-bit mode), so only the WOW64 module (xtajit.dll)
+changes behaviour. Applies to willfaust/FEX 35e8f36 and 18d891e.
+Not for FEX-Emu.
+
+diff --git a/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp b/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
+index fec669f..07f3cfc 100644
+--- a/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
++++ b/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
+@@ -233,30 +233,35 @@ void OpDispatchBuilder::SecondaryALUOp(OpcodeArgs) {
+   case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x80), 0):
+   case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x81), 0):
+   case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x83), 0):
++  case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x82), 0): // 32-bit alias of 0x80
+     IROp = FEXCore::IR::IROps::OP_ADD;
+     AtomicIROp = FEXCore::IR::IROps::OP_ATOMICFETCHADD;
+     break;
+   case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x80), 1):
+   case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x81), 1):
+   case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x83), 1):
++  case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x82), 1): // 32-bit alias of 0x80
+     IROp = FEXCore::IR::IROps::OP_OR;
+     AtomicIROp = FEXCore::IR::IROps::OP_ATOMICFETCHOR;
+     break;
+   case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x80), 4):
+   case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x81), 4):
+   case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x83), 4):
++  case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x82), 4): // 32-bit alias of 0x80
+     IROp = FEXCore::IR::IROps::OP_ANDWITHFLAGS;
+     AtomicIROp = FEXCore::IR::IROps::OP_ATOMICFETCHAND;
+     break;
+   case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x80), 5):
+   case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x81), 5):
+   case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x83), 5):
++  case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x82), 5): // 32-bit alias of 0x80
+     IROp = FEXCore::IR::IROps::OP_SUB;
+     AtomicIROp = FEXCore::IR::IROps::OP_ATOMICFETCHSUB;
+     break;
+   case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x80), 6):
+   case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x81), 6):
+   case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x83), 6):
++  case OPD(FEXCore::X86Tables::TYPE_GROUP_1, OpToIndex(0x82), 6): // 32-bit alias of 0x80
+     IROp = FEXCore::IR::IROps::OP_XOR;
+     AtomicIROp = FEXCore::IR::IROps::OP_ATOMICFETCHXOR;
+     break;

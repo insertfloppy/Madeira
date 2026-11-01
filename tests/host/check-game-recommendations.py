@@ -65,12 +65,12 @@ for m in re.finditer(r'static let (\w+) = GameRecommendation\(\n\s*id: "([^"]+)"
     lines = [line[len(indent):] if line.startswith(indent) else line for line in body.split('\n')]
     presets[ident] = dict(name=name, title=title, version=int(version), lines=lines, switches=' '.join((switches or '').split()))
 assert set(presets) == {'rdr2-steam', 'rdr2-other', 'gta5e-steam', 'gta5e-other', 'ghost-of-tsushima', 'god-of-war',
-                        'horizon-zero-dawn', 'dark-souls-remastered', 'dark-souls-iii', 'fallout-new-vegas', 'fallout-3', 'black-ops-2', 'project-zomboid',
-                        'counter-strike-2', 'escapists-2', 'slay-the-spire-2', 'rockstar-launcher', 'rockstar-launcher-setup', 'ubisoft-connect', 'ubisoft-connect-setup', 'battle-net',
+                        'horizon-zero-dawn', 'dark-souls-remastered', 'dark-souls-iii', 'fallout-new-vegas', 'fallout-3', 'black-ops-2', 'project-zomboid', 'project-zomboid-b41',
+                        'counter-strike-2', 'escapists-2', 'slay-the-spire-2', 'garrys-mod', 'rockstar-launcher', 'rockstar-launcher-setup', 'ubisoft-connect', 'ubisoft-connect-setup', 'battle-net',
                         'battle-net-setup', 'ffxiv-launcher', 'ffxiv-setup', 'standard'}, sorted(presets)
 assert ('static let all = [rdr2Steam, rdr2Other, gta5EnhancedSteam, gta5EnhancedOther, ghostOfTsushima, godOfWar, horizonZeroDawn,\n'
-        '                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, projectZomboid,\n'
-        '                      counterStrike2, escapists2, slayTheSpire2, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,\n'
+        '                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, projectZomboid, projectZomboidB41,\n'
+        '                      counterStrike2, escapists2, slayTheSpire2, garrysMod, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,\n'
         '                      ffxivLauncher, ffxivSetup, standard]') in lists_src
 
 # madeira-bcd's defaults where upstream's differ: every game madeira-bcd ran had them,
@@ -87,8 +87,8 @@ for ident, p in presets.items():
     # was tested through Madeira Dock with the standard list's lines.
     # The publishers' launchers' Chromium clients take no release delay (their allocator
     # reserves, releases and reserves again), and their installers the standard line only.
-    if ident in ('standard', 'fallout-new-vegas', 'fallout-3', 'black-ops-2', 'project-zomboid', 'counter-strike-2', 'escapists-2', 'slay-the-spire-2',
-                 'rockstar-launcher-setup',
+    if ident in ('standard', 'fallout-new-vegas', 'fallout-3', 'black-ops-2', 'project-zomboid', 'project-zomboid-b41', 'counter-strike-2', 'escapists-2', 'slay-the-spire-2',
+                 'garrys-mod', 'rockstar-launcher-setup',
                  'ubisoft-connect', 'ubisoft-connect-setup', 'battle-net', 'battle-net-setup', 'ffxiv-launcher', 'ffxiv-setup'):
         assert not set(FORK_DEFAULTS) & set(p['lines']), (ident, "the list has none of madeira-bcd's defaults")
         p['tested'], p['fork'] = p['lines'][2:], []
@@ -290,8 +290,13 @@ print('PASS: RDR2 (Steam) is the owner\'s 463 list plus the 466, 467, 470, 472, 
 # Recognition: Steam by App ID or steamapps\common folder; everything else by the program's name.
 match = block(lists_src, 'static func match(', '\n    }\n')
 assert 'rdr2AppID = 1174180, gta5EnhancedAppID = 3240220, ghostAppID = 2215430, godOfWarAppID = 1593500,\n               horizonZeroDawnAppID = 1151640, darkSoulsRemasteredAppID = 570940, darkSoulsIIIAppID = 374320,\n               projectZomboidAppID = 108600' in lists_src
-assert 'if steamAppID == projectZomboidAppID || installFolder == "projectzomboid" { return projectZomboid }' in match
-assert 'case "projectzomboid64.exe":\n            return projectZomboid' in match
+assert 'if steamAppID == projectZomboidAppID || installFolder == "projectzomboid" {\n                return projectZomboidList(folder: path, fileExists: fileExists)' in match
+assert 'case "projectzomboid64.exe":\n            return projectZomboidList(folder: path.lastIndex(of: "\\\\").map { String(path[..<$0]) } ?? "", fileExists: fileExists)' in match
+# Build 41 has no projectzomboid.jar (classes loose under java\), so the class-path line would stop it starting.
+pz, pz41 = presets['project-zomboid'], presets['project-zomboid-b41']
+assert any('-Djava.class.path=projectzomboid.jar;.' in line for line in pz['lines'])
+assert not any('java.class.path' in line for line in pz41['lines'])
+assert [line.replace(' -Djava.class.path=projectzomboid.jar;.', '') for line in pz['lines'][2:]] == pz41['lines'][2:], (pz['lines'], pz41['lines'])
 assert 'let installFolder = last == steamFolder ? steamFolder : nil' in match
 assert 'installFolder == "red dead redemption 2"' in match and 'installFolder == "grand theft auto v enhanced"' in match
 assert 'case "ghostoftsushima.exe":' in match and 'case "gow.exe":' in match and 'case "rdr2.exe", "playrdr2.exe":' in match
@@ -330,7 +335,25 @@ for ident in ('rockstar-launcher-setup', 'ubisoft-connect-setup', 'battle-net-se
 for ident in ('ubisoft-connect', 'battle-net'):
     assert not any(line.startswith('env.MADEIRA_FREE_DELAY_MS') for line in presets[ident]['lines']), ident
 assert 'env.MADEIRA_SPAWN_BLOCK = RockstarErrorHandler;.be\\vc_redist' in presets['rockstar-launcher']['lines']
+assert presets['ubisoft-connect']['version'] >= 3 and 'local-write-target = upc.exe;UbisoftConnect.exe;UplayWebCore.exe' in presets['ubisoft-connect']['lines'], \
+    'Ubisoft Connect: upc.exe may write into its own code (its API hooks)'
 assert 'env.WINEDLLOVERRIDES = locationapi=d' in presets['battle-net']['lines'], 'Battle.net without Windows\' location service'
+# Build 58 logs (2026-10-31): both clients ran out of 4 GB windows for their Chromium helpers
+# ("BOOT FAILED at stage 'guest-window-reserve'"). Their browser process (upc.exe,
+# Battle.net.exe) gets one renderer and in-process GPU work through MADEIRA_CHILD_ARGS.
+for ident, exe in (('battle-net', 'Battle.net.exe'),):
+    want = 'env.MADEIRA_CHILD_ARGS = %s --renderer-process-limit=1 --in-process-gpu' % exe
+    assert want in presets[ident]['lines'], (ident, 'fewer Chromium helpers')
+assert presets['ubisoft-connect']['version'] >= 5 and presets['battle-net']['version'] >= 3
+# Ubisoft's CEF ignores those switches (log 16:16Z): upc.exe alone is told 479 MB instead, which caps
+# Chromium at three renderers (exe-phys-mb, virtual_ios.c ios_exe_phys_bytes).
+assert 'exe-phys-mb = upc.exe:479' in presets['ubisoft-connect']['lines']
+assert not any('MADEIRA_CHILD_ARGS' in l for l in presets['ubisoft-connect']['lines'])
+# local-write-target is per game: wineserver reads it again when MADEIRA_CFG_GAME changes.
+mach = (root / 'build/wineserver/mach_ios.c').read_text()
+lwt = mach[mach.index('static int ios_local_write_target'):]
+lwt = lwt[:lwt.index('\n}\n')]
+assert 'getenv( "MADEIRA_CFG_GAME" )' in lwt and 'strncmp( read_for, game' in lwt, 'local-write-target re-read per game'
 # Final Fantasy XIV's launcher is Internet Explorer's engine, not Chromium: the standard line, in the Wine
 # desktop with services first (v2: its InstallShield installer only ran that way on build 48).
 for ident in ('ffxiv-launcher', 'ffxiv-setup'):
@@ -416,6 +439,20 @@ final class LibraryModel {
         if let i = entries.firstIndex(where: { $0.windowsPath == entry.windowsPath }) { entries[i] = entry } else { entries.append(entry) }
     }
     static var drive: URL { URL(fileURLWithPath: ProcessInfo.processInfo.environment["MADEIRA_TEST_DRIVE"]!, isDirectory: true) }
+}
+
+// An external drive: C:\\External\\USB\\... opens MADEIRA_TEST_EXTERNAL, outside the drive.
+enum ExternalDrives {
+    static func driveName(library: String) -> String? {
+        let parts = library.split(separator: "/", maxSplits: 2).map(String.init)
+        return parts.count >= 2 && parts[0] == "External" ? parts[1] : nil
+    }
+    static func nativeURL(_ relative: String) throws -> URL {
+        let parts = relative.split(separator: "/").map(String.init)
+        guard parts.count >= 2, parts[1] == "USB" else { throw CocoaError(.fileNoSuchFile) }
+        return parts.dropFirst(2).reduce(URL(fileURLWithPath: ProcessInfo.processInfo.environment["MADEIRA_TEST_EXTERNAL"]!,
+                                             isDirectory: true)) { $0.appendingPathComponent($1) }
+    }
 }
 
 final class LogStore {
@@ -523,6 +560,13 @@ check(id(#"C:\Games\Horizon Zero Dawn Remastered\HorizonZeroDawnRemastered.exe"#
 check(id(steam + #"\Call of Duty Black Ops II"#, 202970) == "black-ops-2" && id(steam + #"\Call of Duty Black Ops II"#, 212910) == "black-ops-2",
       "Black Ops II's campaign and Zombies from Steam")
 check(id(steam + #"\Call of Duty Black Ops II"#) == "black-ops-2", "Black Ops II by its Steam folder")
+let pzDir = steam + #"\ProjectZomboid"#
+check(id(pzDir, 108600) == "project-zomboid" && id(pzDir) == "project-zomboid", "Project Zomboid before it is installed: the current list")
+check(id(pzDir, 108600, files: [pzDir + #"\ProjectZomboid64.exe"#, pzDir + #"\projectzomboid.jar"#]) == "project-zomboid", "Project Zomboid with its jar")
+check(id(pzDir, 108600, files: [pzDir + #"\ProjectZomboid64.exe"#]) == "project-zomboid-b41", "build 41: the program, no jar")
+check(id(pzDir + #"\ProjectZomboid64.exe"#, files: [pzDir + #"\projectzomboid64.exe"#]) == "project-zomboid-b41", "build 41 by its program")
+check(id(#"C:\Games\PZ\ProjectZomboid64.exe"#, files: [#"C:\Games\PZ\ProjectZomboid64.exe"#, #"C:\Games\PZ\projectzomboid.jar"#]) == "project-zomboid",
+      "the current build by its program")
 check(id(steam + #"\Call of Duty Black Ops II\t6zm.exe"#) == "black-ops-2" && id(#"D:\BO2\T6SP.EXE"#) == "black-ops-2",
       "Black Ops II by its programs")
 check(id(steam + #"\Call of Duty Black Ops"#, 42700) == "none", "the first Black Ops is another game")
@@ -532,6 +576,8 @@ check(id(steam + #"\The Escapists 2"#, 641990) == "escapists-2" && id(steam + #"
       && id(#"D:\Games\The Escapists 2\TheEscapists2.exe"#) == "escapists-2", "The Escapists 2 by App ID, folder and program")
 check(id(steam + #"\Slay the Spire 2"#, 2868840) == "slay-the-spire-2" && id(steam + #"\Slay the Spire 2"#) == "slay-the-spire-2"
       && id(#"C:\x\steamapps\common\Slay the Spire 2\SlayTheSpire2.exe"#) == "slay-the-spire-2", "Slay the Spire 2 by App ID, folder and program")
+check(id(steam + #"\GarrysMod"#, 4000) == "garrys-mod" && id(steam + #"\GarrysMod"#) == "garrys-mod"
+      && id(steam + #"\GarrysMod\bin\win64\gmod.exe"#) == "garrys-mod", "Garry's Mod by App ID, folder and program")
 check(id(#"C:\Games\Foo\foo.exe"#) == "none" && id(steam + #"\Portal 2"#, 620) == "none", "other games")
 check(id("") == "none" && id("C:\\") == "none", "no path")
 check(id(steam + #"\Fallout New Vegas"#, 22380) == "fallout-new-vegas" && id(steam + #"\Fallout New Vegas"#) == "fallout-new-vegas",
@@ -694,6 +740,18 @@ check(FileManager.default.createFile(atPath: folder.appendingPathComponent("gta5
 let play = #"C:\Games\GTA V Enhanced\PlayGTAV.exe"#
 check(R.recommendation(windowsPath: play, steamAppID: nil)?.id == "gta5e-other", "drive_c is looked up in any case")
 check(R.recommendation(windowsPath: #"C:\Games\GTA V\PlayGTAV.exe"#, steamAppID: nil)?.id == "standard", "a missing game file: the standard list")
+// Project Zomboid build 41 in a Steam library on an external drive: read on the drive itself.
+let usb = URL(fileURLWithPath: ProcessInfo.processInfo.environment["MADEIRA_TEST_EXTERNAL"]!, isDirectory: true)
+let pz41Dir = usb.appendingPathComponent("SteamLibrary/steamapps/common/ProjectZomboid", isDirectory: true)
+try! FileManager.default.createDirectory(at: pz41Dir, withIntermediateDirectories: true)
+check(FileManager.default.createFile(atPath: pz41Dir.appendingPathComponent("ProjectZomboid64.exe").path, contents: Data()), "fixture")
+let pzUSB = #"C:\External\USB\SteamLibrary\steamapps\common\ProjectZomboid"#
+check(R.recommendation(windowsPath: pzUSB, steamAppID: 108600)?.id == "project-zomboid-b41", "build 41 on an external drive")
+check(R.recommendation(windowsPath: pzUSB + #"\ProjectZomboid64.exe"#, steamAppID: 108600)?.id == "project-zomboid-b41", "its program there")
+check(FileManager.default.createFile(atPath: pz41Dir.appendingPathComponent("projectzomboid.jar").path, contents: Data()), "fixture")
+check(R.recommendation(windowsPath: pzUSB, steamAppID: 108600)?.id == "project-zomboid", "the current build on an external drive")
+check(R.recommendation(windowsPath: #"C:\External\Gone\SteamLibrary\steamapps\common\ProjectZomboid"#, steamAppID: 108600)?.id
+      == "project-zomboid", "a drive not connected: the current list")
 var removed = LibraryEntry(title: "GTA V Enhanced", windowsPath: play)
 check(R.prepare(&removed, new: true) && file(play) == R.gta5EnhancedOther.fileText && LibraryPrefs.nvidia(play)
       && removed.resolution == "1280x720", "first sight of a new program outside Steam")
@@ -737,11 +795,12 @@ with tempfile.TemporaryDirectory(prefix='madeira-recommended-') as directory:
                                 if line.strip() and not line.strip().startswith('#'))
         (temporary / 'main.swift').write_text(main.replace('@RDR2_CONFIG_LINES@', str(rdr2_config_lines)))
         (temporary / 'drive').mkdir()
+        (temporary / 'usb').mkdir()
         (temporary / 'configs').mkdir()
         binary = temporary / 'recommended'
         subprocess.run([compiler, str(app / 'GameRecommendations.swift'), str(app / 'GameRecommendationsApply.swift'),
                         str(temporary / 'Stubs.swift'), str(temporary / 'main.swift'), '-o', str(binary)], check=True)
-        env = dict(os.environ, MADEIRA_TEST_DRIVE=str(temporary / 'drive'), MADEIRA_TEST_CONFIGS=str(temporary / 'configs'))
+        env = dict(os.environ, MADEIRA_TEST_DRIVE=str(temporary / 'drive'), MADEIRA_TEST_EXTERNAL=str(temporary / 'usb'), MADEIRA_TEST_CONFIGS=str(temporary / 'configs'))
         subprocess.run([str(binary)], check=True, env=env)
     elif args.require_swift:
         raise SystemExit('Swift compiler required for the recommended-settings fixture')

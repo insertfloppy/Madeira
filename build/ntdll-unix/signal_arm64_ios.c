@@ -3848,6 +3848,26 @@ static void *ios_mach_exception_thread( void *arg )
                         case 0x79400000: /* LDRH Wt */
                             if (rt != 31) state.__x[rt] = *(uint16_t *)ea;
                             emulated = 1; break;
+                        /* unsigned-offset immediate signed loads, base x18.
+                         * wow64.dll's `ldrsw x28,[x18,#0x180c]` (TEB64
+                         * WowTebOffset, insn b9980e5c) on a thread whose x18 was
+                         * 0 ended Battle.net.exe on build 58 (2026-10-31,
+                         * "[x18-emul3] UNRECOGNIZED insn=b9980e5c"). */
+                        case 0xb9800000: /* LDRSW Xt */
+                            if (rt != 31) state.__x[rt] = (uint64_t)(int64_t)*(int32_t *)ea;
+                            emulated = 1; break;
+                        case 0x39800000: /* LDRSB Xt */
+                            if (rt != 31) state.__x[rt] = (uint64_t)(int64_t)*(int8_t *)ea;
+                            emulated = 1; break;
+                        case 0x39c00000: /* LDRSB Wt */
+                            if (rt != 31) state.__x[rt] = (uint32_t)(int32_t)*(int8_t *)ea;
+                            emulated = 1; break;
+                        case 0x79800000: /* LDRSH Xt */
+                            if (rt != 31) state.__x[rt] = (uint64_t)(int64_t)*(int16_t *)ea;
+                            emulated = 1; break;
+                        case 0x79c00000: /* LDRSH Wt */
+                            if (rt != 31) state.__x[rt] = (uint32_t)(int32_t)*(int16_t *)ea;
+                            emulated = 1; break;
                         /* unsigned-offset immediate stores, base x18 */
                         case 0xf9000000: /* STR Xt */
                             *(uint64_t *)ea = (rt == 31) ? 0 : state.__x[rt];
@@ -4650,8 +4670,10 @@ static void *ios_mach_exception_thread( void *arg )
                 {
                     extern int ios_smc_write_ok( uintptr_t addr, size_t len );
                     extern uintptr_t ios_smc_alias( uintptr_t addr );
-                    if (ios_smc_write_ok( (uintptr_t)fault_addr, 1 ) && (rw_addr = ios_smc_alias( (uintptr_t)fault_addr )))
-                        smc_candidate = 1;
+                    extern void ios_smc_count_refusal( int why );
+                    if (!ios_smc_write_ok( (uintptr_t)fault_addr, 1 )) ios_smc_count_refusal( -1 );
+                    else if ((rw_addr = ios_smc_alias( (uintptr_t)fault_addr ))) smc_candidate = 1;
+                    else ios_smc_count_refusal( 7 /* IOS_SMC_WHY_ALIAS */ );
                 }
                 /* ml1201: a store to the watched page has no alias; make the page writable for
                  * the emulator below and strip the write again once the store has landed. */
@@ -4740,7 +4762,12 @@ static void *ios_mach_exception_thread( void *arg )
                     uint32_t insn; ios_fault_read_insn( (uint64_t)(uintptr_t)fault_pc, &insn );  /* ml982 */
                     int emulated = 0;
                     uintptr_t alias_fault = 0;
-                    if (smc_candidate && !ios_smc_store_insn( insn )) goto dispatch_guest_fault;   /* [smc-emu] */
+                    if (smc_candidate && !ios_smc_store_insn( insn ))   /* [smc-emu] */
+                    {
+                        extern void ios_smc_count_refusal( int why );
+                        ios_smc_count_refusal( 8 /* IOS_SMC_WHY_INSN */ );
+                        goto dispatch_guest_fault;
+                    }
                     /* STP (SIMD&FP, signed offset, 128-bit Q): 10 101 1 1 0 0 0 imm7 Rt2 Rn Rt
                      *   pattern bits 31-22: 10 1011 1000  → top10 = 0x2B8 (= bits 31..22)
                      *   So mask 0xFFC00000 = top10. Match 0x2B8 << 22 = 0xAE000000? Hmm.
@@ -5657,7 +5684,12 @@ static void *ios_mach_exception_thread( void *arg )
                     }
                     /* [smc-emu]: anything not completed above (atomics, encodings
                      * this path does not decode) takes FEX's path, as before. */
-                    if (!emulated && smc_candidate) goto dispatch_guest_fault;
+                    if (!emulated && smc_candidate)
+                    {
+                        extern void ios_smc_count_refusal( int why );
+                        ios_smc_count_refusal( 9 /* IOS_SMC_WHY_UNDECODED */ );
+                        goto dispatch_guest_fault;
+                    }
                     /* ml350 DISCRIMINATOR: alias EXISTS but the instruction is not
                      * in this decode list — every such miss previously cost a full
                      * run to name (ml349's STRB-reg took one). Print the insn so

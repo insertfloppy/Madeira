@@ -31,7 +31,7 @@ typedef struct { int protection; } vm_region_basic_info_data_64_t;
 #define MACH_PORT_NULL 0
 typedef struct { unsigned long long max_address; } task_vm_info_data_t;
 #define IOS_WOW_WINDOW_SIZE 0x100000000ULL
-#define IOS_WOW_MAX_WINDOWS 8
+#define IOS_WOW_MAX_WINDOWS 10
 #define IOS_WOW_CEF_POOLS_START ((ULONG_PTR)0x7400000000)
 static unsigned long long fake_max;
 static ULONG_PTR used_lo, used_hi;   /* one occupied region [used_lo, used_hi) */

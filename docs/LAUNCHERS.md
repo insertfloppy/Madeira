@@ -26,9 +26,9 @@ folder, and each installer by the name it downloads with:
 
 | Program | List |
 |---|---|
-| `Ubisoft Game Launcher\UbisoftConnect.exe`, `upc.exe`, `Uplay.exe` | `ubisoft-connect` (v2) |
+| `Ubisoft Game Launcher\UbisoftConnect.exe`, `upc.exe`, `Uplay.exe` | `ubisoft-connect` (v5) |
 | `UbisoftConnectInstaller.exe` | `ubisoft-connect-setup` |
-| `Battle.net\Battle.net Launcher.exe`, `Battle.net.exe` | `battle-net` (v2) |
+| `Battle.net\Battle.net Launcher.exe`, `Battle.net.exe` | `battle-net` (v3) |
 | `Battle.net-Setup.exe` | `battle-net-setup` |
 | `Rockstar Games\Launcher\Launcher.exe` | `rockstar-launcher` (125hz) |
 | `Rockstar-Games-Launcher.exe` | `rockstar-launcher-setup` (125hz) |
@@ -53,12 +53,40 @@ layout would take.
 
 When a program raises a Windows error box (NtRaiseHardError), Wine never shows
 it; wine patch 0016 logs its text as `[hard-error]` lines. On build 48, upc.exe
-raised one (status 50000018) and closed with 0xdeadc0de.
+raised one (status 50000018) and closed with 0xdeadc0de; build 58's log
+gave its text, `Error at hooking API "LdrFindResource_U"`. upc.exe hooks ntdll by
+writing into its own code, and Madeira's wineserver denies a write into a
+pseudo-process unless its program is a `local-write-target`, so Ubisoft Connect's
+list version 3 names upc.exe, UbisoftConnect.exe and UplayWebCore.exe.
 
 Battle.net's list also turns off Windows' location service
 (`env.WINEDLLOVERRIDES = locationapi=d`), which the client stops on under Wine.
 
-The Ubisoft Connect and Battle.net version 2 lists are not device-tested yet.
+Battle.net's version 2 list works on build 58 (Cameron, 2026-10-31; slow, its window is 32-bit Chromium). Ubisoft Connect's version 3 is not device-tested yet.
+
+Fewer Chromium helpers (Ubisoft v4, Battle.net v3). The band holds eight 4 GB windows,
+and both clients start more 32-bit Chromium helpers than that: on build 58 their
+renderers failed with `BOOT FAILED at stage 'guest-window-reserve'`. Ubisoft's
+picture then only redrew on a minimize and the client quit. Battle.net's main page
+renderer crashed in libcef.dll during a StarCraft install and its replacement could not
+start, which left a blank window while Agent.exe went on. Chromium reads switches from
+the browser process's own command line (upc.exe, Battle.net.exe), so the lists pass
+`--renderer-process-limit=1 --in-process-gpu` through `env.MADEIRA_CHILD_ARGS`, which
+removes the GPU process and the extra renderers. Battle.net's own "Use browser hardware
+acceleration" switch (Settings > App) off is the usual Wine advice too (Wine bug 50637).
+Device logs (2026-10-31): Battle.net.exe took the switches (no GPU process, no failed
+helpers, faster load). upc.exe still started a GPU process, so Ubisoft's CEF setup seems
+to ignore them. Both clients then hit `[x18-emul3] UNRECOGNIZED insn=b9980e5c`
+(wow64.dll's `ldrsw` of WowTebOffset with x18 = 0), which the x18 emulation now handles.
+
+Ubisoft list version 5 (log 16:20Z): past the crash, upc.exe ran two UplayService.exe
+copies, Chromium's GPU, network and storage helpers and asked for six renderers. The ninth
+32-bit program found the guest-window registry (eight entries) full, and the client said
+"Ubisoft services are temporarily unavailable". Chromium's browser keeps at most
+physical MB / 2 / 60 renderers (at least 3), so the list tells upc.exe alone 479 MB
+(`exe-phys-mb = upc.exe:479`, virtual_ios.c `ios_exe_phys_bytes`; the renderers keep the
+real figure for V8's heap), and the registry now holds ten windows (the band and its spill
+range have at most ten 4 GB-aligned candidates). The switches line is dropped.
 
 ## Library sections
 

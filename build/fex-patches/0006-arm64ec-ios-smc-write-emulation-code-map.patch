@@ -23,8 +23,9 @@ through a second mapping of the page when the written granules hold no
 code, then fences and checks again; a store that raced the decoder goes to
 FEX's usual path, which runs it again.
 
-MADEIRA_SMC_WRITE_EMULATE=0 does not register the map (every write takes the
-old path). The rebuilt module is app/Madeira/arm64ec-windows/xtajit64.dll,
+Off by default (build 60: it tripled Project Zomboid's re-translations);
+MADEIRA_SMC_WRITE_EMULATE=1 registers the map. Without it every write takes the
+old path. The rebuilt module is app/Madeira/arm64ec-windows/xtajit64.dll,
 built from 18d891e + 0004 + 0005 + 0006 with build/fex-arm64ec/build.sh's
 options.
 
@@ -215,7 +216,7 @@ index 000000000..c6eb54782
 +}
 +} // namespace FEXCore::Madeira
 diff --git a/Source/Windows/ARM64EC/Module.cpp b/Source/Windows/ARM64EC/Module.cpp
-index f6ff18d27..9b1c0ef13 100644
+index f6ff18d27..60488eafd 100644
 --- a/Source/Windows/ARM64EC/Module.cpp
 +++ b/Source/Windows/ARM64EC/Module.cpp
 @@ -6,6 +6,7 @@ desc: Implements the ARM64EC BT module API using FEXCore
@@ -226,7 +227,7 @@ index f6ff18d27..9b1c0ef13 100644
  #include "../Common/ArenaManager.h"
  #include <FEXCore/fextl/fmt.h>
  #include <FEXCore/Core/X86Enums.h>
-@@ -1230,6 +1231,29 @@ NTSTATUS ProcessInit() {
+@@ -1230,6 +1231,30 @@ NTSTATUS ProcessInit() {
      InvalidationTracker->EnableHotSMCPages(HotThreshold);
      LogMan::Msg::EFmt("[smc-hot] hot SMC pages {} (threshold {} write faults per second)", HotThreshold ? "on" : "off", HotThreshold);
    }
@@ -234,9 +235,10 @@ index f6ff18d27..9b1c0ef13 100644
 +  {
 +    // MADEIRA: hand the SMC code map to Madeira's fault handler, which then completes writes into
 +    // trapped code pages that touch no translated bytes (MadeiraSmcCodeMap.h).
-+    // MADEIRA_SMC_WRITE_EMULATE=0 keeps every such write on the invalidate-and-untrap path.
++    // Off unless MADEIRA_SMC_WRITE_EMULATE=1: on build 60 it tripled Project Zomboid's
++    // re-translations (1.1M -> 3.7M), so every write stays on the invalidate-and-untrap path.
 +    const char* Emulate = getenv("MADEIRA_SMC_WRITE_EMULATE");
-+    if (!(Emulate && Emulate[0] == '0')) {
++    if (Emulate && Emulate[0] == '1') {
 +      FEXCore::Madeira::g_SmcCodeMap.Magic = FEXCore::Madeira::SmcCodeMapMagic;
 +      FEXCore::Madeira::g_SmcCodeMap.SlotCount = FEXCore::Madeira::SmcCodeMapSlots;
 +      FEXCore::Madeira::g_SmcCodeMapEnabled = true;
@@ -249,7 +251,7 @@ index f6ff18d27..9b1c0ef13 100644
 +      LogMan::Msg::EFmt("[smc-emu] code map {} at {} ({:#x})", Status ? "not taken by this ntdll" : "registered",
 +                        static_cast<void*>(&FEXCore::Madeira::g_SmcCodeMap), static_cast<uint32_t>(Status));
 +    } else {
-+      LogMan::Msg::EFmt("[smc-emu] off (MADEIRA_SMC_WRITE_EMULATE=0)");
++      LogMan::Msg::EFmt("[smc-emu] off (MADEIRA_SMC_WRITE_EMULATE=1 turns it on)");
 +    }
 +  }
 +#endif

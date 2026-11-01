@@ -405,6 +405,41 @@ struct GOGGameSheet: View {
 
 // MARK: - Game details
 
+/// A GOG game's redistributables (GOGSetup): each installer's state in this prefix,
+/// and those left out with the reason.
+struct GOGSetupRows: View {
+    let record: GOGInstalledGame
+
+    var body: some View {
+        let programs = record.setup ?? []
+        let notes = record.setupNotes ?? []
+        if record.setup == nil {
+            Text("Installed before Madeira added GOG's redistributables. Repair installed files adds them.")
+                .font(.caption).foregroundStyle(.secondary)
+        } else if !programs.isEmpty || !notes.isEmpty {
+            DisclosureGroup("Redistributables (\(programs.count + notes.count))") {
+                ForEach(programs, id: \.id) { program in
+                    LabeledContent(program.name, value: Self.text(GOGSetup.state(program.id, drive: LibraryModel.drive)))
+                }
+                ForEach(notes, id: \.name) { note in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(note.name)
+                        Text(note.note).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    static func text(_ state: GOGSetup.State) -> String {
+        switch state {
+        case .pending: return "Installs at the next start"
+        case .done: return "Installed"
+        case .failed(let code): return "Failed (code \(code)); Repair runs it again"
+        }
+    }
+}
+
 /// The GOG section of a GOG game's Game details page.
 struct GOGEntrySection: View {
     @Binding var entry: LibraryEntry
@@ -442,6 +477,10 @@ struct GOGEntrySection: View {
                 LabeledContent("Version", value: record.versionName.isEmpty ? record.buildID : record.versionName)
                 LabeledContent("Language", value: record.language == "*" ? "Default" : record.language)
                 if !record.dlc.isEmpty { LabeledContent("DLC installed", value: "\(record.dlc.count)") }
+                if record.galaxy != nil, GOGGalaxy.enabled {
+                    LabeledContent("Achievements and stats", value: gog.signedIn ? "On while it runs" : "Sign in to GOG")
+                }
+                GOGSetupRows(record: record)
             }
             LabeledContent("Product ID", value: id)
             if record != nil, download == nil {

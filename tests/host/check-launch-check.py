@@ -45,7 +45,7 @@ check('KnownGames.find(windowsPath: entry.windowsPath, steamAppID: entry.steamAp
       'the library shows a Tested pill')
 check('input.tested = KnownGames.find(' in view, 'Will it run? names a device test')
 known = (app / 'GameRecommendations.swift').read_text(encoding='utf-8')
-for ident in ('counter-strike-2', 'escapists-2', 'fallout-new-vegas'):
+for ident in ('counter-strike-2', 'escapists-2', 'fallout-new-vegas', 'batman-arkham-city'):
     check(f'id: "{ident}"' in known, f'tested game {ident} has recommended settings')
 
 harness = r'''

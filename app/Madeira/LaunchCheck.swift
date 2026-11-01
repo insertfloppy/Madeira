@@ -371,6 +371,10 @@ enum KnownGames {
                   folders: ["fallout new vegas"], programs: ["falloutnv.exe"],
                   tests: [onIPhone17ProMax(build: 18)],
                   note: "Saves load with Older NVIDIA card (Direct3D 9), which Madeira turns on for it."),
+        KnownGame(id: "batman-arkham-city", title: "Batman: Arkham City", appIDs: [200260],
+                  folders: ["batman arkham city goty"], programs: ["batmanac.exe"],
+                  tests: [onIPhone17ProMax(build: 63)],
+                  note: "With Older NVIDIA card (Direct3D 9), which Madeira turns on for it. Without it the game opens its own launcher instead and the session ends."),
     ]
 
     /// The device test for a game: `windowsPath` is a program or a Steam game's install folder.

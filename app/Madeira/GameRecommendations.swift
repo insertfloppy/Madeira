@@ -599,6 +599,23 @@ enum GameRecommendations {
         """,
         olderNvidia: true)
 
+    /// Batman: Arkham City (GOTY, 200260; the first edition, 57400, has the same
+    /// BatmanAC.exe and is not tested). Tested on an iPhone 17 Pro Max, builds 60
+    /// and 63 (2026-10-31). Without "Older NVIDIA card (Direct3D 9)", BatmanAC.exe
+    /// read the adapter (Madeira's own card name), started its .NET launcher
+    /// BmLauncher.exe and exited, and the session ended with the launcher still
+    /// opening (log 17:20). With it, BatmanAC.exe started no launcher and drew its
+    /// first frame (log 22:26, build 63), and the game played. The config is the
+    /// standard list, which it ran with.
+    static let batmanArkhamCity = GameRecommendation(
+        id: "batman-arkham-city", title: "Batman: Arkham City", version: 1,
+        config: """
+        # Madeira's recommended settings for Batman: Arkham City.
+        # Reset to Recommended, at the bottom of the game's settings, brings them back.
+        env.MADEIRA_EC_HOOK_TRACE = 0
+        """,
+        olderNvidia: true)
+
     /// Call of Duty: Black Ops II, campaign (202970) and Zombies (212910), which
     /// share one folder; multiplayer (202990) lives there too. Build 26
     /// (2026-10-26): Zombies' sound crackled with the 60 ms default although the
@@ -952,7 +969,7 @@ enum GameRecommendations {
         """)
 
     static let all = [rdr2Steam, rdr2Other, gta5EnhancedSteam, gta5EnhancedOther, ghostOfTsushima, godOfWar, horizonZeroDawn,
-                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, projectZomboid, projectZomboidB41,
+                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, batmanArkhamCity, blackOps2, projectZomboid, projectZomboidB41,
                       counterStrike2, escapists2, slayTheSpire2, garrysMod, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,
                       ffxivLauncher, ffxivSetup, standard]
 
@@ -964,6 +981,8 @@ enum GameRecommendations {
                projectZomboidAppID = 108600, counterStrike2AppID = 730, escapists2AppID = 641990,
                slayTheSpire2AppID = 2868840, garrysModAppID = 4000
     static let falloutNewVegasAppID = 22380, fallout3AppIDs: Set<Int> = [22300, 22370]   // Fallout 3, its GOTY Edition
+    /// Batman: Arkham City's Game of the Year Edition and its first edition.
+    static let batmanArkhamCityAppIDs: Set<Int> = [200260, 57400]
     /// Black Ops II's campaign, Zombies and multiplayer.
     static let blackOps2AppIDs: Set<Int> = [202970, 212910, 202990]
 
@@ -992,6 +1011,8 @@ enum GameRecommendations {
             if steamAppID == falloutNewVegasAppID || installFolder == "fallout new vegas" { return falloutNewVegas }
             if steamAppID.map(fallout3AppIDs.contains) == true || installFolder == "fallout 3"
                 || installFolder == "fallout 3 goty" { return fallout3 }
+            if batmanArkhamCityAppIDs.contains(steamAppID ?? 0) || installFolder == "batman arkham city goty"
+                || installFolder == "batman arkham city" { return batmanArkhamCity }
             if blackOps2AppIDs.contains(steamAppID ?? 0) || installFolder == "call of duty black ops ii" { return blackOps2 }
             if steamAppID == projectZomboidAppID || installFolder == "projectzomboid" {
                 return projectZomboidList(folder: path, fileExists: fileExists)
@@ -1028,6 +1049,8 @@ enum GameRecommendations {
             return falloutNewVegas
         case "fallout3.exe":
             return fallout3
+        case "batmanac.exe":
+            return batmanArkhamCity
         case "t6sp.exe", "t6zm.exe", "t6mp.exe":
             return blackOps2
         case "projectzomboid64.exe":

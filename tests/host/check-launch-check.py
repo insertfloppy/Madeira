@@ -44,6 +44,8 @@ check('LogStore.shared.log(logLine(' in view, 'the result is logged as [will-it-
 check('KnownGames.find(windowsPath: entry.windowsPath, steamAppID: entry.steamAppID) != nil { texts.append("Tested") }' in library,
       'the library shows a Tested pill')
 check('input.tested = KnownGames.find(' in view, 'Will it run? names a device test')
+check('input.knownIssues = KnownIssues.find(' in view and 'Link("Read the report", destination: link)' in view,
+      'Will it run? shows known issues with a link to the report')
 known = (app / 'GameRecommendations.swift').read_text(encoding='utf-8')
 for ident in ('counter-strike-2', 'escapists-2', 'fallout-new-vegas'):
     check(f'id: "{ident}"' in known, f'tested game {ident} has recommended settings')
@@ -156,6 +158,34 @@ expect(mega.detail(deviceName: "iPhone", physicalMemory: 4 * gb) == "Tested on M
 input.antiCheat = "Valve Anti-Cheat"
 expect(LaunchCheck.notes(input).last?.id == "tested", "the good line sorts last")
 expect(LaunchCheck.gigabytes(12 * gb - 1) == "12 GB" && LaunchCheck.gigabytes(gb + gb / 2) == "1.5 GB", "sizes in words")
+// Known issues (reports on github.com/willfaust/Madeira that this build doesn't fix)
+expect(Set(KnownIssues.all.map(\.id)).count == KnownIssues.all.count, "known issue ids are unique")
+expect(KnownIssues.all.allSatisfy { issue in !issue.detail.isEmpty && (issue.report == nil
+           || (issue.link?.absoluteString == "https://github.com/willfaust/Madeira/issues/\(issue.report!)" && !issue.version.isEmpty)) },
+       "every reported known issue links its report")
+expect(KnownIssues.all.filter { $0.report != nil }.allSatisfy { issue in KnownGames.all.allSatisfy { $0.appIDs.isDisjoint(with: issue.appIDs) } },
+       "no tested game carries a player report")
+let pz = KnownIssues.find(windowsPath: #"C:\x\steamapps\common\ProjectZomboid"#, steamAppID: 108600)
+input = base; input.knownIssues = pz
+let pzNotes = LaunchCheck.notes(input)
+expect(pz.map(\.id) == ["project-zomboid-loading"] && pzNotes.first?.level == .info && pzNotes.first?.link == nil
+       && pzNotes.first?.detail.hasPrefix("It takes 2 to 4 minutes") == true && pzNotes.first?.detail.contains("Reported by") == false,
+       "Project Zomboid's own loading note: info, no report link")
+expect(KnownIssues.find(windowsPath: #"C:\x\steamapps\common\Hollow Knight Silksong"#, steamAppID: 1030300).map(\.id) == ["silksong-cutscenes"], "Silksong by App ID")
+expect(KnownIssues.find(windowsPath: #"C:\x\steamapps\common\Cyberpunk 2077"#, steamAppID: nil).map(\.id) == ["cyberpunk-launcher"], "Cyberpunk by folder")
+expect(KnownIssues.find(windowsPath: #"C:\Games\Outlast\Binaries\Win32\OLGame.exe"#, steamAppID: nil).map(\.id) == ["outlast-illegal-instruction"], "Outlast by program")
+expect(KnownIssues.find(windowsPath: #"C:\x\steamapps\common\Dark Souls II Scholar of the First Sin"#, steamAppID: 335300).count == 1, "Dark Souls II by App ID")
+expect(KnownIssues.find(windowsPath: #"C:\x\steamapps\common\Counter-Strike Global Offensive"#, steamAppID: 730).isEmpty, "CS2 has no known issue")
+expect(KnownIssues.find(windowsPath: "", steamAppID: nil).isEmpty, "no path, no App ID: nothing")
+input = base; input.knownIssues = KnownIssues.find(windowsPath: "", steamAppID: 1091500)
+let issueNotes = LaunchCheck.notes(input)
+expect(issueNotes.map(\.id) == ["known-issue.cyberpunk-launcher"] && issueNotes[0].level == .caution
+       && issueNotes[0].title == "Known issue: crashes in its launcher" && issueNotes[0].link?.absoluteString.hasSuffix("/issues/504") == true
+       && issueNotes[0].detail.hasSuffix("Reported by a player on Madeira 0.1.3; it may behave differently in this build."),
+       "a known issue becomes a caution note with its report link: \(issueNotes.first?.detail ?? "")")
+input.knownIssues = KnownIssues.find(windowsPath: "", steamAppID: 1030300)
+expect(LaunchCheck.notes(input).first?.level == .info, "a smaller known issue is info, so the card still says no known problems")
+expect(KnownIssues.all.allSatisfy { $0.level == .caution || $0.level == .info }, "known issues never ask Play anyway?")
 '''
 
 if not SWIFTC:

@@ -113,6 +113,9 @@ setup = (app / 'SwiftGOG/GOGSetup.swift').read_text()
 require('>\\"\\(result)\\" echo %ERRORLEVEL%' in setup, 'setup batch: redirect first, so a 0 exit code is written')
 catalog = (app / 'ConfigCatalog.generated.swift').read_text()
 require('env.MADEIRA_GOG_GALAXY' in catalog, 'settings catalog lists env.MADEIRA_GOG_GALAXY')
+galaxy_src = (app / 'SwiftGOG/GOGGalaxy.swift').read_text()
+require('static func enabled(for entry: LibraryEntry)' in galaxy_src and 'Self.enabled(for: entry)' in galaxy_src,
+        'a game\'s own config can turn Galaxy off (read before its lines are applied)')
 
 print('\nAll GOG store checks passed.' if failures == 0 else f'\n{failures} GOG store check(s) failed.')
 raise SystemExit(1 if failures else 0)

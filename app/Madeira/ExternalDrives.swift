@@ -427,6 +427,7 @@ struct ExternalDrivesSection: View {
     @State private var dropTarget = false
     @State private var scanning: ExternalFolder?
     @State private var removing: ExternalFolder?
+    private var bundleID: String { Bundle.main.bundleIdentifier ?? "different" }
 
     var body: some View {
         Section {
@@ -458,8 +459,17 @@ struct ExternalDrivesSection: View {
                 }
             }
             if let error { Text(error).foregroundStyle(.red) }
+            if let appID = FolderPickerSigning.signedAppID {
+                // Builds 47 to 60: with these two different, iOS refuses every in-place
+                // folder hand-off (picker, drag and drop, Shortcuts), with no error.
+                Label {
+                    // One literal, so the catalog translates it (%@ for each interpolation).
+                    Text("This copy of Madeira is signed with the App ID \(appID), but its bundle ID is \(bundleID). iOS only lets an app open folders on a drive when the two match. Sign Madeira again with the bundle ID set to \(appID) (in your signer, usually a Bundle ID or \"use profile's App ID\" option), then add the drive here.")
+                        .font(.footnote)
+                } icon: { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
+            }
         } header: { Text("External drives") } footer: {
-            Text("Pick a folder on a USB or SSD drive, or a whole drive that already has games on it. Windows sees it as a drive letter and as C:\\External\\<name>. Find games adds the games on it to the library; Steam libraries on it (steamapps or SteamLibrary) show up in the Steam section. Install Steam games on picks where new Steam downloads go by default (each install can still pick another place); on a drive they go into <name>\\SteamLibrary. Unplugging the drive while a game runs will close it. Restart Madeira after adding a folder for Windows to list the new drive.")
+            Text("Pick a folder on a USB or SSD drive, or a whole drive that already has games on it. Windows sees it as a drive letter and as C:\\External\\<name>. Find games adds the games on it to the library; Steam libraries on it (steamapps or SteamLibrary) show up in the Steam section. Install Steam games on picks where new Steam downloads go by default (each install can still pick another place); on a drive they go into <name>\\SteamLibrary. Unplugging the drive while a game runs will close it. Restart Madeira after adding a folder for Windows to list the new drive. If the picker's Open button does nothing, Madeira's bundle ID does not match the App ID it is signed with; the note above says how to fix that.")
         }
         .confirmationDialog("Remove \(removing?.name ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
                             titleVisibility: .visible, presenting: removing) { folder in

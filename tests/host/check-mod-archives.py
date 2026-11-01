@@ -14,7 +14,7 @@ holds each file's SHA-256), and libarchive's RAR 4 / RAR 5 test files where the 
 libarchive (macOS).
 """
 from pathlib import Path
-import argparse, hashlib, json, os, shutil, subprocess, sys, tempfile
+import argparse, hashlib, json, os, shutil, subprocess, sys, tempfile, unicodedata
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--require-swift', action='store_true')
@@ -46,7 +46,7 @@ check('folder ? [.folder] : [.zip, .archive, .data]' in mods and 'asCopy: true' 
       'files and folders have their own pickers, opened as copies (in-place picks fail with a mismatched App ID)')
 check('import SwiftUI' not in source and 'LibraryModel' not in source, 'ModArchives.swift is Foundation only')
 
-expected = json.loads((fixtures / 'expected.json').read_text(encoding='utf-8'))
+expected = {unicodedata.normalize('NFC', k): v for k, v in json.loads((fixtures / 'expected.json').read_text(encoding='utf-8')).items()}
 
 main_swift = r'''
 import Foundation
@@ -74,7 +74,8 @@ catch { print("broken=" + (error.localizedDescription.contains("damaged") ? "ref
 def tree(folder):
     found = {}
     for path in sorted(folder.rglob('*')):
-        rel = path.relative_to(folder).as_posix()
+        # APFS hands back names decomposed (NFD); compare them composed, as written.
+        rel = unicodedata.normalize('NFC', path.relative_to(folder).as_posix())
         if path.is_dir():
             if not any(path.iterdir()):
                 found[rel + '/'] = ''

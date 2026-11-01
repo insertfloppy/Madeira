@@ -28050,14 +28050,20 @@ NTSTATUS ios_virtual_handle_fault_for_thread( EXCEPTION_RECORD *rec, TEB *teb )
      * servicing it, naming the host pc and the address, instead of freezing. */
     if (pthread_mutex_trylock( &virtual_mutex ))
     {
-        int tries;
+        /* back off from 20 us to 1 ms: a fault that merely meets a busy lock
+         * (guard pages, write watches in 32-bit games) resumes within tens of
+         * microseconds of the lock freeing, not a whole millisecond later */
+        unsigned int waited = 0, step = 20;
+        int locked = 0;
 
-        for (tries = 0; tries < 2000; tries++)
+        while (waited < 2000000)
         {
-            usleep( 1000 );
-            if (!pthread_mutex_trylock( &virtual_mutex )) break;
+            usleep( step );
+            waited += step;
+            if (!pthread_mutex_trylock( &virtual_mutex )) { locked = 1; break; }
+            if (step < 1000) step = step * 2 > 1000 ? 1000 : step * 2;
         }
-        if (tries == 2000)
+        if (!locked)
         {
             static int deadlock_logs;
             if (deadlock_logs++ < 16)

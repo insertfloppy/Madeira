@@ -20,7 +20,7 @@ import Foundation
 @MainActor final class GOGGalaxy {
     static let shared = GOGGalaxy()
 
-    static var enabled: Bool { SteamSignIn.flag("MADEIRA_GOG_GALAXY", default: true) }
+    static var enabled: Bool { SteamSignIn.flag("MADEIRA_GOG_GALAXY", default: true) }   // GOG Galaxy's game services (sign-in, achievements, stats, leaderboards) for GOG games, answered by Madeira on 127.0.0.1:9977 while one runs (docs/GOG.md, "Galaxy"); 0 turns them off, in madeira.cfg or in one game's own config
 
     /// Whether this game's play gets the service: its own config (Game details ›
     /// This game's config) wins over madeira.cfg. A game's lines are applied only

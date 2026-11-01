@@ -307,6 +307,7 @@ final class GOGDownloader: @unchecked Sendable {
                     needed.append(item)
                 }
             }
+            if state.doneBytes != reported { report(state) }   // the last, under-32 MB stretch
         }
 
         // Free space: what grows, plus room for the largest temporary file.

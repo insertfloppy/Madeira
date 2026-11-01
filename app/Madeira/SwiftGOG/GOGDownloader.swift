@@ -293,9 +293,14 @@ final class GOGDownloader: @unchecked Sendable {
             var state = GOGDownloadProgress(phase: .verifying)
             state.totalBytes = UInt64(toVerify.reduce(0) { $0 + $1.0.file.size })
             report(state)
+            var reported: UInt64 = 0
             for (item, url) in toVerify {
                 try Task.checkCancellation()
-                if try Self.matches(url, item.file, progress: { state.doneBytes += UInt64($0); report(state) }) {
+                // Progress at most every 32 MB: each report is a hop to the main actor.
+                if try Self.matches(url, item.file, progress: { bytes in
+                    state.doneBytes += UInt64(bytes)
+                    if state.doneBytes - reported >= 32 << 20 { reported = state.doneBytes; report(state) }
+                }) {
                     journal.record(item.file)
                     result.filesKept += 1
                 } else {
@@ -399,15 +404,21 @@ final class GOGDownloader: @unchecked Sendable {
     }
 
     /// Whether the file on disk holds exactly these chunks.
+    /// Each read is drained in its own autorelease pool: FileHandle's reads are autoreleased,
+    /// and a repair reads the whole game without suspending, so without the pool every byte
+    /// stayed in memory until the end (a 15 GB game ended Madeira; build 63, 2026-11-01).
     static func matches(_ url: URL, _ file: GOGFile, progress: (Int) -> Void = { _ in }) throws -> Bool {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         for chunk in file.chunks {
-            let data = try handle.read(upToCount: chunk.size) ?? Data()
-            progress(data.count)
-            guard data.count == chunk.size, GOGCodec.md5(data) == chunk.md5 else { return false }
+            let same: Bool = try autoreleasepool {
+                let data = try handle.read(upToCount: chunk.size) ?? Data()
+                progress(data.count)
+                return data.count == chunk.size && GOGCodec.md5(data) == chunk.md5
+            }
+            guard same else { return false }
         }
-        return (try handle.read(upToCount: 1) ?? Data()).isEmpty
+        return try autoreleasepool { (try handle.read(upToCount: 1) ?? Data()).isEmpty }
     }
 
     /// One chunk from the CDN, trying the next address after a failure and asking for

@@ -489,7 +489,7 @@ struct GOGEntrySection: View {
         } header: {
             Text("GOG")
         } footer: {
-            Text("The game starts its own program in Wine, as GOG Galaxy would. There is no GOG Galaxy in Madeira, so Galaxy features such as achievements and cloud saves are not available.")
+            Text("The game starts its own program in Wine, as GOG Galaxy would. Madeira stands in for GOG Galaxy while the game runs, so a game that uses Galaxy gets its achievements and stats. Galaxy cloud saves are not available yet.")
         }
         .task(id: id) { await gog.checkForUpdate(id) }
         .confirmationDialog("Uninstall \(entry.title)? Its downloaded files are deleted from this device. Saves stored elsewhere are kept.",

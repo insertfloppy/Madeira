@@ -12,8 +12,9 @@ import UIKit
 // are only served through addresses GOG signs for an account that owns the game.
 // Games download unmodified from GOG's CDN into C:\GOG Games\<folder> and start as
 // their own program in Wine, as the build's goggame-<id>.info names it (GOG
-// Galaxy's own "play task"). There is no GOG Galaxy client in the prefix; GOG
-// games are DRM-free and need no sign-in to start. DLC the account owns installs
+// Galaxy's own "play task"). There is no GOG Galaxy client in the prefix (Madeira
+// answers for it while a game runs: GOGGalaxy.swift); GOG games are DRM-free and
+// need no sign-in to start. DLC the account owns installs
 // with the game. `env.MADEIRA_GOG = 0` turns the whole thing off.
 // Log tags: [gog-library], [gog-download] (product ids, counts and short reason
 // codes; never account data).

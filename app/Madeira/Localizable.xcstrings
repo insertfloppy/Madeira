@@ -1225,6 +1225,40 @@
         }
       }
     },
+    "All of these are installed.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle davon werden installiert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se instalan todas."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모두 설치됩니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todas serão instaladas."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устанавливается всё это."
+          }
+        }
+      }
+    },
     "All settings": {
       "localizations": {
         "de": {
@@ -1833,6 +1867,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Автоматически использует StikDebug, если он установлен. После сбоя Madeira не меняет способ втихую."
+          }
+        }
+      }
+    },
+    "Back": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zurück"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Atrás"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "뒤로"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voltar"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Назад"
           }
         }
       }
@@ -2925,36 +2993,138 @@
         }
       }
     },
-    "Choose a mod's .zip or its unpacked folder in Files (from Nexus Mods, Thunderstore and other sites). Madeira puts the files where the game expects them, and Remove puts the game back as it was. For a .7z or .rar, unpack it first.": {
+    "Choose a Folder": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wähle die .zip-Datei eines Mods oder seinen entpackten Ordner in Dateien (von Nexus Mods, Thunderstore und anderen Seiten). Madeira legt die Dateien dort ab, wo das Spiel sie erwartet, und Entfernen stellt das Spiel wieder her, wie es war. Eine .7z- oder .rar-Datei musst du zuerst entpacken."
+            "value": "Ordner auswählen"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Elige el .zip de un mod o su carpeta descomprimida en Archivos (de Nexus Mods, Thunderstore y otros sitios). Madeira pone los archivos donde el juego los espera, y Quitar deja el juego como estaba. Si es .7z o .rar, descomprímelo primero."
+            "value": "Elegir una carpeta"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "파일 앱에서 모드의 .zip 또는 압축을 푼 폴더를 선택하세요(Nexus Mods, Thunderstore 및 기타 사이트). Madeira가 게임이 기대하는 위치에 파일을 넣고, 제거하면 게임이 원래 상태로 돌아갑니다. .7z나 .rar는 먼저 압축을 푸세요."
+            "value": "폴더 선택"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Escolha o .zip de um mod ou a pasta descompactada dele no Arquivos (do Nexus Mods, Thunderstore e outros sites). O Madeira coloca os arquivos onde o jogo espera, e Remover deixa o jogo como estava. Se for .7z ou .rar, descompacte primeiro."
+            "value": "Escolher uma pasta"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Выберите .zip мода или его распакованную папку в Файлах (с Nexus Mods, Thunderstore и других сайтов). Madeira положит файлы туда, где их ждёт игра, а «Удалить» вернёт игру как было. Архив .7z или .rar сначала распакуйте."
+            "value": "Выбрать папку"
+          }
+        }
+      }
+    },
+    "Choose a mod's .zip, .7z or .rar, or its unpacked folder, from Files (Nexus Mods, Thunderstore and other sites). Madeira puts the files where the game expects them, asks for the options of a mod with an installer, turns on its plugins, and Remove puts the game back as it was.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle die .zip-, .7z- oder .rar-Datei eines Mods oder seinen entpackten Ordner in Dateien (Nexus Mods, Thunderstore und andere Seiten). Madeira legt die Dateien dorthin, wo das Spiel sie erwartet, fragt bei einem Mod mit Installer nach den Optionen, aktiviert seine Plugins, und Entfernen stellt das Spiel wieder her, wie es war."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige el .zip, .7z o .rar de un mod, o su carpeta descomprimida, en Archivos (Nexus Mods, Thunderstore y otros sitios). Madeira pone los archivos donde el juego los espera, pregunta las opciones de un mod con instalador, activa sus plugins, y Quitar deja el juego como estaba."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 앱에서 모드의 .zip, .7z, .rar 파일이나 압축을 푼 폴더를 선택하세요(Nexus Mods, Thunderstore 및 기타 사이트). Madeira가 게임이 기대하는 위치에 파일을 넣고, 설치 프로그램이 있는 모드는 옵션을 묻고, 플러그인을 켭니다. 제거하면 게임이 원래 상태로 돌아갑니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha o .zip, .7z ou .rar de um mod, ou a pasta descompactada, no Arquivos (Nexus Mods, Thunderstore e outros sites). O Madeira coloca os arquivos onde o jogo espera, pergunta as opções de um mod com instalador, ativa os plugins dele, e Remover deixa o jogo como estava."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите .zip, .7z или .rar мода либо его распакованную папку в «Файлах» (Nexus Mods, Thunderstore и другие сайты). Madeira кладёт файлы туда, где их ждёт игра, спрашивает параметры мода с установщиком, включает его плагины, а «Удалить» возвращает игру в прежнее состояние."
+          }
+        }
+      }
+    },
+    "Choose any.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle beliebig viele."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige las que quieras."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원하는 만큼 선택하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha quantas quiser."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите любые."
+          }
+        }
+      }
+    },
+    "Choose at least one.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle mindestens eine."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige al menos una."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "하나 이상 선택하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha pelo menos uma."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите хотя бы один вариант."
           }
         }
       }
@@ -2989,6 +3159,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "Выбрать обложку"
+          }
+        }
+      }
+    },
+    "Choose one or none.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle eine oder keine."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige una o ninguna."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "하나를 선택하거나 선택하지 마세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha uma ou nenhuma."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите один вариант или ни одного."
+          }
+        }
+      }
+    },
+    "Choose one.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle eine Option."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige una."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "하나를 선택하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha uma."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите один вариант."
           }
         }
       }
@@ -11187,6 +11425,40 @@
         }
       }
     },
+    "Next": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weiter"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Siguiente"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avançar"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Далее"
+          }
+        }
+      }
+    },
     "No": {
       "localizations": {
         "de": {
@@ -11999,6 +12271,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ещё не синхронизировано."
+          }
+        }
+      }
+    },
+    "Not usable with your game": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit deinem Spiel nicht nutzbar"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se puede usar con tu juego"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 게임에서는 사용할 수 없음"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não pode ser usado com o seu jogo"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не подходит для вашей игры"
           }
         }
       }
@@ -13733,6 +14039,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Недавно добавленные"
+          }
+        }
+      }
+    },
+    "Recommended": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empfohlen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recomendado"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "권장"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recomendado"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рекомендуется"
           }
         }
       }
@@ -20159,6 +20499,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Этот ключ пуст."
+          }
+        }
+      }
+    },
+    "This mod's installer has no options to choose. Install puts in its required files.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Installer dieses Mods hat keine Optionen zur Auswahl. Installieren legt seine benötigten Dateien an."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El instalador de este mod no tiene opciones que elegir. Instalar pone sus archivos necesarios."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 모드의 설치 프로그램에는 선택할 옵션이 없습니다. 설치하면 필수 파일이 들어갑니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O instalador deste mod não tem opções para escolher. Instalar coloca os arquivos necessários."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "У установщика этого мода нет параметров для выбора. «Установить» добавит его обязательные файлы."
           }
         }
       }

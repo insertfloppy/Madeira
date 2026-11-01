@@ -379,6 +379,8 @@ jobs:
           python3 tests/host/check-dll-overrides.py --require-swift
           python3 tests/host/check-game-setup-share.py --require-swift
           python3 tests/host/check-game-mods.py --require-swift
+          python3 tests/host/check-mod-archives.py --require-swift
+          python3 tests/host/check-mod-fomod.py --require-swift
           python3 tests/host/check-steam-achievements.py --require-swift
           python3 tests/host/check-translations.py
           python3 tests/host/check-background-run.py --require-swift

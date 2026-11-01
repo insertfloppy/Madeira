@@ -373,6 +373,7 @@ jobs:
           python3 tests/host/check-launch-check.py
           python3 tests/host/check-wine-gecko.py
           python3 tests/host/check-sysx64-file.py
+          python3 tests/host/check-msvproc.py
           python3 tests/host/check-background-pause.py
           python3 tests/host/check-d3d9-index-range.py
           python3 tests/host/check-x18-signed-loads.py

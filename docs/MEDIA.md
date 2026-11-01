@@ -87,6 +87,11 @@ rate-limited per process (`MADEIRA_DIAG=1` lifts the `[wma]` cap).
   too small and timestamps, checks every pixel against BT.601/BT.709, and
   checks the refusals (scaling, compressed input, RGB to YUV,
   `MADEIRA_WG_VCONV=0`).
+- `tests/host/check-msvproc.py`: the farm ships `msvproc.dll`, the COM
+  server the prefix registers for `CLSID_VideoProcessorMFT` (it creates
+  winegstreamer's `wg_video_processor`, the converter above). Without it the
+  source reader cannot insert a video processor and fails with
+  `MF_E_TOPO_CODEC_NOT_FOUND` before the converter is reached.
 - `tests/x86/wma-x86.c` (`build-wma-test.sh`): a 32-bit program that
   reaches the WMA decoder exactly as FAudio does and checks that the decoded
   PCM has the 440 Hz fundamental it was encoded from. Exit 62 pass, 63 decode

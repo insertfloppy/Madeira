@@ -44,6 +44,23 @@ extension LauncherID {
         return nil
     }
 
+    /// Battle.net's product codes for its games' folders, for
+    /// `Battle.net.exe --exec="launch <code>"` (the way Lutris starts Blizzard games):
+    /// the games check that Battle.net is running and signed in, so a library entry
+    /// starts them through it. Call of Duty and Warcraft Rumble have no single code.
+    static let blizzardCodes: [String: String] = [
+        "World of Warcraft": "WoW", "Diablo IV": "Fen", "Diablo III": "D3", "Diablo II Resurrected": "OSI",
+        "Diablo Immortal": "ANBS", "Overwatch": "Pro", "StarCraft II": "S2", "StarCraft": "S1",
+        "Hearthstone": "WTCG", "Heroes of the Storm": "Hero", "Warcraft III": "W3",
+    ]
+
+    /// The launch switch for a Blizzard game's folder ("Program Files (x86)/StarCraft"), or nil.
+    static func blizzardLaunch(folder: String) -> String? {
+        guard let name = folder.split(separator: "/").last.map(String.init),
+              let code = blizzardCodes.first(where: { $0.key.lowercased() == name.lowercased() })?.value else { return nil }
+        return "--exec=\"launch \(code)\""
+    }
+
     /// Folders, relative to drive_c, that hold one installed game each.
     var gameFolders: [String] {
         let fm = FileManager.default
@@ -85,7 +102,10 @@ struct LauncherFoundGame: Identifiable, Hashable {
 enum LauncherGames {
     static func found(_ id: LauncherID, entries: [LibraryEntry]) -> [LauncherFoundGame] {
         let added = entries.map { $0.relativePath.lowercased() }
+        let launches = Set(entries.map { $0.arguments.trimmingCharacters(in: .whitespaces) })
         return id.gameFolders.filter { folder in
+            // A Blizzard game added to start through Battle.net (add) has Battle.net's path.
+            if id == .battleNet, let launch = LauncherID.blizzardLaunch(folder: folder), launches.contains(launch) { return false }
             // FFXIV's launcher (boot\ffxivboot.exe) shares the game's folder: only the game counts.
             let prefix = folder.lowercased() + (id == .ffxiv ? "/game/ffxiv_dx11.exe" : "/")
             return !added.contains(where: { $0.hasPrefix(prefix) })
@@ -95,6 +115,24 @@ enum LauncherGames {
     /// Adds a found game with its program: FFXIV's game, else the folder's one program
     /// (helpers aside) or the one named like the folder. Returns an error to show.
     static func add(_ game: LauncherFoundGame) -> String? {
+        // A Blizzard game starts through Battle.net (--exec="launch <code>"): the games
+        // check that Battle.net is running and signed in. The entry is Battle.net's
+        // launcher with that switch, so it also gets Battle.net's settings list.
+        if let launch = LauncherID.blizzardLaunch(folder: game.folder) {
+            let launcher = ["Program Files (x86)", "Program Files"]
+                .map { LibraryModel.drive.appendingPathComponent($0 + "/Battle.net/Battle.net Launcher.exe") }
+                .first { FileManager.default.fileExists(atPath: $0.path) }
+            if let launcher {
+                do {
+                    var entry = try LibraryModel.inspect(launcher)
+                    entry.title = game.title
+                    entry.arguments = launch
+                    LibraryModel.shared.save(entry)
+                    LogStore.shared.log("[launcher] added found game through Battle.net title=\(game.title) args=\(launch)")
+                    return nil
+                } catch { return error.localizedDescription }
+            }
+        }
         let folder = LibraryModel.drive.appendingPathComponent(game.folder, isDirectory: true)
         let program = game.folder.hasSuffix("FINAL FANTASY XIV - A Realm Reborn") ? "game/ffxiv_dx11.exe"
             : ItchProgram.find(in: folder, title: game.title)

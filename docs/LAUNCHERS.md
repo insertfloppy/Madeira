@@ -99,6 +99,11 @@ Each launcher has its own library section, like Steam's and GOG's
   Ubisoft's `games` folder, Rockstar's game folders, Blizzard's game folders,
   Final Fantasy XIV's game. Add picks the folder's one program (helpers aside), or
   the one named like the folder; otherwise it asks for + instead.
+  A Blizzard game is added as Battle.net Launcher.exe with
+  `--exec="launch <code>"` (S1 StarCraft, S2 StarCraft II, Fen Diablo IV, D3, OSI
+  Diablo II: Resurrected, WoW, Pro Overwatch, WTCG Hearthstone, Hero, W3, ANBS),
+  as Lutris starts them: the game's own launcher (StarCraft Launcher.exe) only
+  hands off to Battle.net.exe and exits, which ended the session on build 63.
 
 Final Fantasy XIV's launcher is in the same section, for installing and updating the
 game only: its window is Internet Explorer's engine, so its lists are the standard

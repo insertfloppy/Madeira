@@ -50,6 +50,7 @@ import Foundation
 struct LibraryEntry {
     var relativePath: String
     var title = ""
+    var arguments = ""
     var desktop: Bool? = nil
     var steamAppID: Int? = nil
     var epicAppName: String? = nil
@@ -117,6 +118,18 @@ struct Checks {
         require(LauncherGames.found(.ffxiv, entries: ffGame).isEmpty, "FFXIV: not offered once the game is added")
         require(LauncherGames.add(ff[0]) == nil && LibraryModel.shared.saved.last?.relativePath.hasSuffix("/game/ffxiv_dx11.exe") == true
                 && LibraryModel.shared.saved.last?.title == "Final Fantasy XIV", "adding FFXIV adds its game")
+        // Blizzard games start through Battle.net (--exec="launch <code>"), as Lutris starts them.
+        require(LauncherID.blizzardLaunch(folder: "Program Files (x86)/StarCraft") == "--exec=\"launch S1\""
+                && LauncherID.blizzardLaunch(folder: "Program Files (x86)/StarCraft II") == "--exec=\"launch S2\""
+                && LauncherID.blizzardLaunch(folder: "Program Files (x86)/Diablo IV") == "--exec=\"launch Fen\""
+                && LauncherID.blizzardLaunch(folder: "Program Files (x86)/Call of Duty") == nil, "Blizzard product codes")
+        fm.createFile(atPath: drive.appendingPathComponent("Program Files (x86)/Battle.net/Battle.net Launcher.exe").path, contents: Data())
+        let d4 = LauncherGames.found(.battleNet, entries: added)[0]
+        require(LauncherGames.add(d4) == nil && LibraryModel.shared.saved.last?.relativePath.hasSuffix("/Battle.net/Battle.net Launcher.exe") == true
+                && LibraryModel.shared.saved.last?.arguments == "--exec=\"launch Fen\"" && LibraryModel.shared.saved.last?.title == "Diablo IV",
+                "adding a Blizzard game adds Battle.net's launcher with --exec=\"launch <code>\"")
+        require(LauncherGames.found(.battleNet, entries: added + [LibraryModel.shared.saved.last!]).isEmpty,
+                "a Blizzard game added through Battle.net is not offered again")
         require(LauncherGames.add(LauncherFoundGame(folder: "Games/Mystery"))?.contains("choose its .exe") == true,
                 "a game without one clear program asks for +")
         if failures > 0 { exit(1) }

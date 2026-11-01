@@ -3823,6 +3823,34 @@ void fill_vm_counters( VM_COUNTERS_EX *pvmi, int unix_pid )
         ret = STATUS_INVALID_INFO_CLASS; \
         break
 
+/* iOS-Madeira: ProcessWow64Information for the current process. Pseudo-
+ * processes share one native wow_peb global, and the loader clears/reassigns
+ * it while a sibling process boots (loader_ios.c saved_wow_peb). A query in
+ * that window returns the sibling's PEB32 or NULL; wow64.dll then stores
+ * WOW64INFO at NULL+0x480 and the process dies before its first window.
+ * Answer from the caller's own PEB instead: env_ios.c places each PEB32 at
+ * the native PEB + page_size, and the per-PEB guest-window registry tells
+ * WoW owners from native ones. Found by iDeck (GPL-3.0, kuscholar/iDeck
+ * Build51). env.MADEIRA_WOW_PEB_PER_PROCESS = 0 restores the shared value. */
+static ULONG_PTR ios_current_wow_peb( ULONG_PTR legacy )
+{
+    const char *opt = getenv( "MADEIRA_WOW_PEB_PER_PROCESS" );
+    TEB *teb;
+    void *owner;
+    ULONG_PTR base, result;
+    static LONG lines;
+
+    if ((opt && opt[0] == '0' && !opt[1]) || !is_win64) return legacy;
+    teb = NtCurrentTeb();
+    owner = teb ? teb->Peb : NULL;
+    base = owner ? ios_wow_base_for_peb( owner ) : 0;
+    result = base ? (ULONG_PTR)owner + page_size : 0;
+    if (result != legacy && InterlockedIncrement( &lines ) <= 16)
+        dprintf( 2, "[wow-peb] per-process ProcessWow64Information owner=%p guest=%p shared=%p result=%p\n",
+                 owner, (void *)base, (void *)legacy, (void *)result );
+    return result;
+}
+
 /**********************************************************************
  *           NtQueryInformationProcess  (NTDLL.@)
  */
@@ -4168,7 +4196,7 @@ NTSTATUS WINAPI NtQueryInformationProcess( HANDLE handle, PROCESSINFOCLASS class
         len = sizeof(ULONG_PTR);
         if (size != len) return STATUS_INFO_LENGTH_MISMATCH;
         if (handle == GetCurrentProcess())
-            *(ULONG_PTR *)info = is_old_wow64() ? (ULONG_PTR)peb : (ULONG_PTR)wow_peb;
+            *(ULONG_PTR *)info = ios_current_wow_peb( is_old_wow64() ? (ULONG_PTR)peb : (ULONG_PTR)wow_peb );
         else
         {
             ULONG_PTR val = 0;

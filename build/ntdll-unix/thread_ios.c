@@ -1810,6 +1810,30 @@ NTSTATUS init_thread_stack( TEB *teb, ULONG_PTR limit, SIZE_T reserve_size, SIZE
 }
 
 
+/* iOS-Madeira: 32-bit GROUP_AFFINITY. wow64's ps_attributes_32to64 widens the
+ * attribute pointer but leaves the 12-byte GROUP_AFFINITY32 behind it (4-byte
+ * mask, group, 3 reserved words). Native GROUP_AFFINITY is 16 bytes with an
+ * 8-byte mask, so reading it as native turns group/reserved into mask bits,
+ * NtSetInformationThread rejects it with c000000d and the new thread is
+ * terminated. Seen with 32-bit Vulkan/CEF thread creation (iDeck, GPL-3.0,
+ * kuscholar/iDeck Build44). Decode every field; normal validation still runs.
+ * env.MADEIRA_WOW_AFFINITY_FIX = 0 restores the old read. */
+static int ios_wow_affinity32( const PS_ATTRIBUTE *attribute, GROUP_AFFINITY *out )
+{
+    const char *opt = getenv( "MADEIRA_WOW_AFFINITY_FIX" );
+    unsigned int mask;
+    unsigned short tail[4];
+
+    if (opt && opt[0] == '0' && !opt[1]) return 0;
+    if (sizeof(ULONG_PTR) != 8 || attribute->Size != 12 || !attribute->ValuePtr) return 0;
+    memcpy( &mask, attribute->ValuePtr, 4 );
+    memcpy( tail, (const char *)attribute->ValuePtr + 4, 8 );
+    out->Mask = mask;
+    out->Group = tail[0];
+    memcpy( out->Reserved, tail + 1, 6 );
+    return 1;
+}
+
 /***********************************************************************
  *           update_attr_list
  *
@@ -1836,7 +1860,15 @@ static NTSTATUS update_attr_list( PS_ATTRIBUTE_LIST *attr, HANDLE thread, const 
         }
         else if (attr->Attributes[i].Attribute == PS_ATTRIBUTE_GROUP_AFFINITY)
         {
-            GROUP_AFFINITY *aff = attr->Attributes[i].ValuePtr;
+            GROUP_AFFINITY *aff = attr->Attributes[i].ValuePtr, converted;
+            if (get_wow_teb( teb ) && ios_wow_affinity32( &attr->Attributes[i], &converted ))
+            {
+                static LONG lines;
+                aff = &converted;
+                if (InterlockedIncrement( &lines ) <= 8)
+                    dprintf( 2, "[wow-affinity32] converted 12-byte GROUP_AFFINITY32 group=%u mask=%llx\n",
+                             (unsigned)aff->Group, (unsigned long long)aff->Mask );
+            }
             status = NtSetInformationThread( thread, ThreadGroupInformation, aff, sizeof(*aff) );
             if (status) break;
         }

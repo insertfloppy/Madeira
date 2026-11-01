@@ -728,7 +728,11 @@ struct LibraryEntry: Codable, Identifiable {
         // ml2310: a game from another store is not a Steam game. With the bridge's fixed Steam
         // identity its launcher took its Steam path and failed; env.MADEIRA_STORE_STEAM_IDENTITY=1
         // publishes it as before.
-        if epicAppName != nil, MadeiraConfig.get("env.MADEIRA_STORE_STEAM_IDENTITY") != "1" {
+        // Launchers' programs too (Ubisoft Connect, Battle.net, Rockstar, FFXIV, and the games
+        // they list): the Rockstar Games Launcher read SteamAppId as a Steam start.
+        let path = relativePath.lowercased()
+        let launcherProgram = steamAppID == nil && LauncherID.allCases.contains { id in id.sectionFolders.contains { path.hasPrefix($0 + "/") } }
+        if epicAppName != nil || launcherProgram, MadeiraConfig.get("env.MADEIRA_STORE_STEAM_IDENTITY") != "1" {
             setenv("MADEIRA_NO_STEAM_IDENTITY", "1", 1)
         }
         // ml1163: a game starts in launchDirectory (a chosen folder, Steam's for "The game",

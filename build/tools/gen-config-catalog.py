@@ -43,6 +43,13 @@ INT_READERS = {"madeira_cfg_int", "mad_cfg_int_pe"}
 # Titles, kinds and fixed choices for options with a dedicated Settings row.
 # "choices" are (value, label); the empty value means "remove the key".
 OVERLAY = {
+    # From 125hz pr/recent-work-1028b (c1b08ee9, 55dff257).
+    "env.MADEIRA_THREAD_REAP_CHECKED": {"category": "Exceptions & threads", "title": "Check the previous exited thread before freeing it", "kind": "bool", "default": "1",
+                "note": "ml2290: on (default): a thread that exits frees the previous exited thread's stacks only after finding that thread, by its process, thread id and pthread, in the live TEB list. 32-bit processes started one after another can get the same window and TEB addresses; the unchecked hand-off then made a new thread free its own kernel stack at exit and hang there holding the memory lock (a launcher installer's second VC++ redistributable, the installer waiting on that thread forever). 0: the upstream hand-off."},
+    "env.MADEIRA_STORE_STEAM_IDENTITY": {"category": "App & front end", "title": "Give games from other stores the fixed Steam identity", "kind": "bool", "default": "0",
+                "note": "ml2310: off (default): a game from another store (an Epic library entry, or a program in a launcher's folders: Ubisoft Connect, Battle.net, Rockstar, FFXIV) starts without the fixed Steam identity (SteamAppId, SteamGameId, SteamAppPath) every other launch outside Madeira Dock gets. With it, a launcher took its Steam path, its Steam API start failed and it showed only an error (the Rockstar Games Launcher, 'Steam failed to initialize'). 1: publishes it as before."},
+    "env.MADEIRA_NO_STEAM_IDENTITY": {"category": "App & front end", "title": "", "kind": "text", "default": "",
+                "note": "set by the library for one launch of a game from another store; not a setting"},
     # Madeira in the background (app/Madeira/BackgroundRun.swift, build/ntdll-unix/audio_null_ios.c).
     "background-run": {"category": "App & front end", "title": "Keep a game running in the background (minutes)",
                 "kind": "int", "default": "10", "sources": ["app/Madeira/BackgroundRun.swift"],

@@ -32,8 +32,10 @@ lib = (ROOT / 'app/Madeira/Library.swift').read_text(encoding='utf-8')
 cfg = body(lib, 'func configureLaunch() {')
 check('unsetenv("MADEIRA_NO_STEAM_IDENTITY")' in cfg.split('if steamAppID != nil')[0],
       'every launch clears the flag before anything returns')
-check('if epicAppName != nil, MadeiraConfig.get("env.MADEIRA_STORE_STEAM_IDENTITY") != "1" {\n            setenv("MADEIRA_NO_STEAM_IDENTITY", "1", 1)' in cfg,
-      'an Epic entry sets it unless env.MADEIRA_STORE_STEAM_IDENTITY = 1')
+check('if epicAppName != nil || launcherProgram, MadeiraConfig.get("env.MADEIRA_STORE_STEAM_IDENTITY") != "1" {\n            setenv("MADEIRA_NO_STEAM_IDENTITY", "1", 1)' in cfg,
+      'an Epic entry or a launcher program sets it unless env.MADEIRA_STORE_STEAM_IDENTITY = 1')
+check('let launcherProgram = steamAppID == nil && LauncherID.allCases.contains' in cfg and 'sectionFolders' in cfg,
+      'a launcher program is one in a launcher section folder (Ubisoft, Battle.net, Rockstar, FFXIV)')
 
 bridge = (ROOT / 'app/Madeira/WineProcessBridge.m').read_text(encoding='utf-8')
 i = bridge.index('const char *no_steam_id = getenv("MADEIRA_NO_STEAM_IDENTITY");')

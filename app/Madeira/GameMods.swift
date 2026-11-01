@@ -694,6 +694,7 @@ struct GameModsSection: View {
                     try GameMods.prepare(url, gameFolder: folder)
                 }.value
                 if prepared.fomod != nil { installer = prepared } else { place = prepared.plan.place; pending = prepared }
+                LogStore.shared.log("[mods] \(prepared.name): \(prepared.fomod != nil ? "installer options" : "place sheet") shown, \(prepared.plan.files.count) files, suggested \(prepared.plan.place.rawValue)")
             } catch {
                 self.error = error.localizedDescription
                 LogStore.shared.log("[mods] \(url.lastPathComponent): \(error.localizedDescription)")
@@ -704,6 +705,7 @@ struct GameModsSection: View {
 
     private func finish(_ prepared: GameMods.Prepared?) {
         guard let prepared, working == nil else { return }
+        LogStore.shared.log("[mods] \(prepared.name): closed without installing")
         for url in prepared.cleanup { try? FileManager.default.removeItem(at: url) }
     }
 
@@ -715,7 +717,10 @@ struct GameModsSection: View {
                 _ = try await Task.detached {
                     try GameMods.install(prepared.source, plan: plan, place: chosen, name: prepared.name, windowsPath: windowsPath, gameFolder: folder)
                 }.value
-            } catch { self.error = "The mod could not be installed: \(error.localizedDescription)" }
+            } catch {
+                self.error = "The mod could not be installed: \(error.localizedDescription)"
+                LogStore.shared.log("[mods] \(prepared.name) could not be installed: \(error.localizedDescription)")
+            }
             for url in prepared.cleanup { try? FileManager.default.removeItem(at: url) }
             working = nil; reload()
         }
@@ -750,6 +755,7 @@ struct GameModsSection: View {
                 Section {
                     Button("Install", systemImage: "square.and.arrow.down") {
                         let chosen = place
+                        LogStore.shared.log("[mods] \(prepared.name): Install tapped (\(chosen.rawValue))")
                         pending = nil
                         install(prepared, plan: plan, place: chosen)
                     }
@@ -761,9 +767,11 @@ struct GameModsSection: View {
     }
 }
 
-/// The Files picker for a mod, as a copy: in-place picks do nothing when Madeira
-/// is signed with an App ID other than its bundle ID (see ExternalDrives.swift),
-/// and a copy is what an install reads once anyway.
+/// The Files picker for a mod. A file is picked as a copy: in-place picks do nothing
+/// when Madeira is signed with an App ID other than its bundle ID (see
+/// ExternalDrives.swift), and a copy is what an install reads once anyway. iOS
+/// cannot copy a folder (a copying picker for .folder throws and ends the app, build
+/// 67), so a folder is opened in place with the external drives' signing fix.
 @MainActor final class ModPicker: NSObject, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate {
     static let shared = ModPicker()
     private var done: ((URL?) -> Void)?
@@ -773,27 +781,34 @@ struct GameModsSection: View {
             .flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController else { return }
         while let next = top.presentedViewController, !next.isBeingDismissed { top = next }
         let types: [UTType] = folder ? [.folder] : [.zip, .archive, .data]
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
+        if folder { FolderPickerSigning.willPick() }
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: !folder)
         picker.allowsMultipleSelection = false
         picker.delegate = self
+        if folder { FolderPickerSigning.prepare(picker) }
         self.done = done
+        self.folder = folder
         LogStore.shared.log("[mods] picker shown (\(folder ? "folder" : "file"))")
         top.present(picker, animated: true) { picker.presentationController?.delegate = self }
     }
+    private var folder = false
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        if folder { FolderPickerSigning.didPick(.picked) }
         LogStore.shared.log("[mods] picked \(urls.first?.lastPathComponent ?? "nothing")")
         done?(urls.first)
         done = nil
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        if folder { FolderPickerSigning.didPick(.cancelled) }
         LogStore.shared.log("[mods] picker cancelled")
         done?(nil)
         done = nil
     }
 
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        if folder { FolderPickerSigning.didPick(.swipedAway) }
         LogStore.shared.log("[mods] picker swiped away")
         done?(nil)
         done = nil

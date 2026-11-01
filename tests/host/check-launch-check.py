@@ -47,7 +47,7 @@ check('input.tested = KnownGames.find(' in view, 'Will it run? names a device te
 check('input.knownIssues = KnownIssues.find(' in view and 'Link("Read the report", destination: link)' in view,
       'Will it run? shows known issues with a link to the report')
 known = (app / 'GameRecommendations.swift').read_text(encoding='utf-8')
-for ident in ('counter-strike-2', 'escapists-2', 'fallout-new-vegas'):
+for ident in ('counter-strike-2', 'escapists-2', 'fallout-new-vegas', 'batman-arkham-city'):
     check(f'id: "{ident}"' in known, f'tested game {ident} has recommended settings')
 
 harness = r'''

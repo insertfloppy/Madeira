@@ -51,7 +51,11 @@ Removing an entry never removes the game's files or saves.
   **Steam** (the Steam games being downloaded and the games Steam has
   installed, with their count; a **Sign in to Steam** card when signed out),
   its **Not installed** group (the account's other games, with their count),
-  then **Other games** (the games you added; **+** in the navigation bar adds one). Tapping
+  then **FINAL FANTASY XIV** (its recognized entries; with none, an install
+  card that downloads the game from Square Enix to this device or an
+  external drive, `docs/FFXIV_PATCHING.md`;
+  `env.MADEIRA_FFXIV = 0` turns the section off and puts its entries back
+  in Other games), then **Other games** (the games you added; **+** in the navigation bar adds one). Tapping
   **Steam** or **Other games** collapses it; **Not installed** folds on its
   own, open by default; each state is remembered. Search, the layout and, for
   installed games, Sort by apply to every section. Pull down to read the
@@ -313,6 +317,16 @@ choice, **One-time installs**, updates, **Repair
 installed files**, App ID, free space and **Uninstall**; its **Executable**
 section shows the install folder, and it has no **Remove from library** (the
 entry goes with **Uninstall**).
+
+A FINAL FANTASY XIV entry (one of the game's own programs, beside its version
+files; `docs/SQUARE_ENIX_SIGNIN.md`) adds a **Square Enix** section under Play:
+**License** (Windows or Mac, chosen before the first Play), **Free trial
+account** and **Remember sign-in** (the Square Enix ID and password in the
+Keychain). Play opens a sign-in sheet first, and on success starts
+`game/ffxiv_dx11.exe` with that launch's session, whichever of the game's
+programs the entry names. Under the Windows license that launch hides Wine's
+`wine_get_host_version` from the game and always starts in the Wine desktop,
+since the game's Windows version restarts itself.
 
 ## Sessions
 

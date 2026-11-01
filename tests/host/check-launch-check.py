@@ -34,7 +34,10 @@ check('import UIKit' not in check_swift and 'import SwiftUI' not in check_swift,
 check('LaunchCheckSection(notes: launchNotes, fix: launchCheckFix)' in library, 'Game details shows the card')
 start = library[library.index('    private func start() {'):]
 start = start[:start.index('\n    }\n') + 6]
-check(start.index('LaunchCheck.acknowledged') < start.index('LaunchCurtain.shared.begin'),
+# Play's hand-off (the curtain) is in launch(), which start() calls last (FINAL FANTASY XIV
+# signs in between the two).
+launch = library[library.index('    private func launch() {'):]
+check(start.index('LaunchCheck.acknowledged') < start.index('launch()') and 'LaunchCurtain.shared.begin' in launch[:launch.index('\n    }\n')],
       'Play asks "Play anyway?" before the launch starts')
 check('case .getWineGecko: WineGeckoModel.shared.install()' in library
       and 'input.geckoAvailable = WineGeckoModel.available' in view, 'Get Wine Gecko is wired')

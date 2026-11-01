@@ -974,8 +974,9 @@ enum GameRecommendations {
         launchMode: "desktop", startServices: true)
 
     /// Final Fantasy XIV's launcher (boot\ffxivboot.exe; LauncherSupport.swift), kept
-    /// for installing and updating the game: Madeira signs the game itself in
-    /// (FFXIVLaunch.swift). Its window is Internet Explorer's engine (mshtml), not
+    /// as a fallback for installing and updating the game (with env.MADEIRA_FFXIV = 0):
+    /// Madeira signs the game in (SquareEnixSignIn.swift) and installs and patches it
+    /// itself in the library's FINAL FANTASY XIV section (FFXIVLibrary.swift). Its window is Internet Explorer's engine (mshtml), not
     /// Chromium, so the standard line only, in the Wine desktop with Windows services
     /// first (version 2): its installer only ran that way on build 48. Not
     /// device-tested yet.

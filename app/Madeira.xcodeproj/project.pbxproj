@@ -27,8 +27,6 @@
 		A1007B03 /* SwiftItch/ItchArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2007B03 /* ItchArchive.swift */; };
 		A1007B04 /* ItchLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2007B04 /* ItchLibrary.swift */; };
 		A1007B05 /* ItchGames.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2007B05 /* ItchGames.swift */; };
-		A1007B06 /* SwiftFFXIV/FFXIVLogin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2007B06 /* FFXIVLogin.swift */; };
-		A1007B07 /* FFXIVLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2007B07 /* FFXIVLaunch.swift */; };
 		A1007B21 /* LauncherGames.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2007B21 /* LauncherGames.swift */; };
 		A1006A03 /* SwiftGOG/GOGAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2006A03 /* GOGAPI.swift */; };
 		A1006A04 /* SwiftGOG/GOGDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2006A04 /* GOGDownloader.swift */; };
@@ -227,6 +225,10 @@
 		A1000281 /* Winios/WiniosCursor.c in Sources */ = {isa = PBXBuildFile; fileRef = A2000281 /* Winios/WiniosCursor.c */; };
 		A1000245 /* TouchGamepad.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000245 /* TouchGamepad.swift */; };
 		A1000F01 /* GestureZones.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000F01 /* GestureZones.swift */; };
+		A1001001 /* SquareEnixSignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2001001 /* SquareEnixSignIn.swift */; };
+		A1001002 /* SquareEnixSignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2001002 /* SquareEnixSignInView.swift */; };
+		A1001003 /* FFXIVPatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2001003 /* FFXIVPatcher.swift */; };
+		A1001004 /* FFXIVLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2001004 /* FFXIVLibrary.swift */; };
 		A1000246 /* TouchControlPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000246 /* TouchControlPresets.swift */; };
 		A1000993 /* SteamFilesFlag.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000993 /* SteamFilesFlag.swift */; };
 		A1005C0F /* SteamWorkshopFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2005C0F /* SteamWorkshopFiles.swift */; };
@@ -287,8 +289,6 @@
 		A2007B03 /* ItchArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftItch/ItchArchive.swift"; sourceTree = "<group>"; };
 		A2007B04 /* ItchLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ItchLibrary.swift"; sourceTree = "<group>"; };
 		A2007B05 /* ItchGames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ItchGames.swift"; sourceTree = "<group>"; };
-		A2007B06 /* FFXIVLogin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftFFXIV/FFXIVLogin.swift"; sourceTree = "<group>"; };
-		A2007B07 /* FFXIVLaunch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FFXIVLaunch.swift"; sourceTree = "<group>"; };
 		A2007B21 /* LauncherGames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LauncherGames.swift"; sourceTree = "<group>"; };
 		A2006A03 /* GOGAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftGOG/GOGAPI.swift"; sourceTree = "<group>"; };
 		A2006A04 /* GOGDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftGOG/GOGDownloader.swift"; sourceTree = "<group>"; };
@@ -504,6 +504,10 @@
 		A2000281 /* Winios/WiniosCursor.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "Winios/WiniosCursor.c"; sourceTree = "<group>"; };
 		A2000245 /* TouchGamepad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchGamepad.swift; sourceTree = "<group>"; };
 		A2000F01 /* GestureZones.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GestureZones.swift; sourceTree = "<group>"; };
+		A2001001 /* SquareEnixSignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquareEnixSignIn.swift; sourceTree = "<group>"; };
+		A2001002 /* SquareEnixSignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquareEnixSignInView.swift; sourceTree = "<group>"; };
+		A2001003 /* FFXIVPatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FFXIVPatcher.swift; sourceTree = "<group>"; };
+		A2001004 /* FFXIVLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FFXIVLibrary.swift; sourceTree = "<group>"; };
 		A2000246 /* TouchControlPresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchControlPresets.swift; sourceTree = "<group>"; };
 		A2000993 /* SteamFilesFlag.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteamFilesFlag.swift; sourceTree = "<group>"; };
 		A2005C0F /* SteamWorkshopFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteamWorkshopFiles.swift; sourceTree = "<group>"; };
@@ -595,8 +599,6 @@
 				A2007B03 /* ItchArchive.swift */,
 				A2007B04 /* ItchLibrary.swift */,
 				A2007B05 /* ItchGames.swift */,
-				A2007B06 /* FFXIVLogin.swift */,
-				A2007B07 /* FFXIVLaunch.swift */,
 				A2007B21 /* LauncherGames.swift */,
 				A2006A03 /* GOGAPI.swift */,
 				A2006A04 /* GOGDownloader.swift */,
@@ -673,6 +675,10 @@
 				A2000001 /* MadeiraApp.swift */,
 				A2000245 /* TouchGamepad.swift */,
 				A2000F01 /* GestureZones.swift */,
+				A2001001 /* SquareEnixSignIn.swift */,
+				A2001002 /* SquareEnixSignInView.swift */,
+				A2001003 /* FFXIVPatcher.swift */,
+				A2001004 /* FFXIVLibrary.swift */,
 				A2000246 /* TouchControlPresets.swift */,
 				A2000244 /* Winios/WiniosGamepad.c */,
 				A2000203 /* HardwareInput.swift */,
@@ -1033,8 +1039,6 @@
 				A1007B03 /* SwiftItch/ItchArchive.swift in Sources */,
 				A1007B04 /* ItchLibrary.swift in Sources */,
 				A1007B05 /* ItchGames.swift in Sources */,
-				A1007B06 /* SwiftFFXIV/FFXIVLogin.swift in Sources */,
-				A1007B07 /* FFXIVLaunch.swift in Sources */,
 				A1007B21 /* LauncherGames.swift in Sources */,
 				A1006A03 /* SwiftGOG/GOGAPI.swift in Sources */,
 				A1006A04 /* SwiftGOG/GOGDownloader.swift in Sources */,
@@ -1107,6 +1111,10 @@
 				A1000001 /* MadeiraApp.swift in Sources */,
 				A1000245 /* TouchGamepad.swift in Sources */,
 				A1000F01 /* GestureZones.swift in Sources */,
+				A1001001 /* SquareEnixSignIn.swift in Sources */,
+				A1001002 /* SquareEnixSignInView.swift in Sources */,
+				A1001003 /* FFXIVPatcher.swift in Sources */,
+				A1001004 /* FFXIVLibrary.swift in Sources */,
 				A1000246 /* TouchControlPresets.swift in Sources */,
 				A1000244 /* Winios/WiniosGamepad.c in Sources */,
 				A1000203 /* HardwareInput.swift in Sources */,

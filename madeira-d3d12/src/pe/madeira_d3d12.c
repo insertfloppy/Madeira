@@ -456,7 +456,7 @@ struct mad_device {
     struct mad_texheap { obj_handle_t heap; UINT64 size; struct mad_hblk { UINT64 off, size; } *fl; unsigned nfl, fl_cap; } *theaps;
     unsigned ntheaps, theaps_cap;
     struct mad_hret { unsigned heap; UINT64 off, size, serial; } *hret; unsigned nhret, hret_cap;
-    struct mad_mhret { obj_handle_t heap; UINT64 serial; void *mem; } *mhret; unsigned nmhret, mhret_cap;   /* ml1148: Metal heaps waiting for the GPU */
+    struct mad_mhret { obj_handle_t heap; UINT64 serial; void *mem; obj_handle_t obj; } *mhret; unsigned nmhret, mhret_cap;   /* ml1148: Metal heaps waiting for the GPU */
     struct { UINT32 value[4]; obj_handle_t buf; } fillpat[32]; unsigned nfillpat; SRWLOCK fillpat_lock;   /* ml1151: exact UAV clear patterns (a 16-byte period) */
     obj_handle_t k_lib, k_tind_pso, k_ring; UINT64 k_ring_pos; int k_state; SRWLOCK k_lock;   /* madeira-bcd: helper kernels (mad_kernels.metal) */
     obj_handle_t k_probe_pso; unsigned char *k_ring_cpu;   /* madeira-bcd: indirect-argument probes */
@@ -9088,6 +9088,87 @@ static void exec_copy_aspect(struct mad_exec *e, const struct mad_cmd *c) {
     MTLBlitCommandEncoder_encodeCommands(e->benc, (const struct wmtcmd_base *)&k2);
 }
 
+/* A copy between an uncompressed texture and a BC texture whose texel and
+ * block are the same size (R32G32_UINT with BC1/BC4, R32G32B32A32_UINT with
+ * BC2/3/5/6H/7): D3D12 reinterprets one source texel as one destination block,
+ * or the reverse. A game that compresses textures on the GPU writes the blocks
+ * into a uint texture with a compute shader and copies that into the BC texture
+ * (skate.: more than 1024 such copies in a session). Metal's texture-to-texture
+ * blit does not reinterpret, so every one came out black. Here the copy goes
+ * through the staging buffer exec_copy_aspect uses: the source's bytes are read
+ * into it and written to the destination with its own pitch, a block row being
+ * a texel row. Only on a GPU that samples BC natively: elsewhere winemetal
+ * stores BC textures uncompressed (ml1310), so raw blocks would be wrong there
+ * too. Returns 1 when the copy was encoded or skipped, 0 to use the plain
+ * blit. madeira.cfg d3d12 key bc-reinterpret-copy = 0 keeps the plain blit. */
+static void mad_release_after_gpu(struct mad_device *d, obj_handle_t obj);
+static int exec_copy_reinterp(struct mad_exec *e, const struct mad_cmd *c) {
+    static int on = -1, native = -1; static LONG said;
+    const struct mad_resource *s = c->u.tt.src, *d = c->u.tt.dst;
+    struct mad_device *dev = e->q->device;
+    UINT sbytes, sblock, dbytes, dblock, bw, bh, sw, sh, dw, dh, mw, mh, md;
+    UINT64 row, img;
+    obj_handle_t old = 0;
+    struct wmtcmd_blit_copy_from_texture_to_buffer k1; struct wmtcmd_blit_copy_from_buffer_to_texture k2;
+    if (s->desc.Format == d->desc.Format || c->u.tt.splane || c->u.tt.dplane || s->is_depth || d->is_depth) return 0;
+    mad_format_info(s->desc.Format, &sbytes, &sblock); mad_format_info(d->desc.Format, &dbytes, &dblock);
+    if (sblock == dblock || !(sblock == 1 || dblock == 1) || !(sblock == 4 || dblock == 4)) return 0;
+    if (on < 0) {
+        on = mad_cfg_int_pe("bc-reinterpret-copy", 1) ? 1 : 0;
+        native = MTLDevice_supportsBCTextureCompression(dev->mtl_device) ? 1 : 0;
+        d3d12_log("[madeira-d3d12] bc-reinterpret-copy = %d, BC sampling %s (madeira.cfg; 0 keeps the plain blit)\n",
+                  on, native ? "native" : "not native, so these copies stay plain blits");
+    }
+    if (!on || !native) return 0;
+    if (sbytes != dbytes || (c->u.tt.d && c->u.tt.d != 1) || !c->u.tt.w || !c->u.tt.h) {
+        if (InterlockedIncrement(&said) <= 16)
+            d3d12_log("[madeira-d3d12] reinterpret copy '%s' format %u (%u B) -> '%s' format %u (%u B), depth %u: sizes differ, skipped\n",
+                      s->name ? s->name : "?", (unsigned)s->desc.Format, sbytes, d->name ? d->name : "?", (unsigned)d->desc.Format, dbytes, c->u.tt.d);
+        MAD_SKIP(e); return 1;
+    }
+    /* the region in blocks (= texels of the uncompressed side), and in each side's own units */
+    bw = sblock == 1 ? c->u.tt.w : (c->u.tt.w + 3) / 4;
+    bh = sblock == 1 ? c->u.tt.h : (c->u.tt.h + 3) / 4;
+    sw = c->u.tt.w; sh = c->u.tt.h;
+    mad_mip_dims(d, c->u.tt.dlevel, &mw, &mh, &md);
+    dw = dblock == 1 ? bw : bw * 4; dh = dblock == 1 ? bh : bh * 4;
+    if (c->u.tt.dx >= mw || c->u.tt.dy >= mh) { MAD_SKIP(e); return 1; }
+    if (dw > mw - c->u.tt.dx) dw = mw - c->u.tt.dx;   /* a BC mip smaller than a block, or the edge of the mip */
+    if (dh > mh - c->u.tt.dy) dh = mh - c->u.tt.dy;
+    row = (UINT64)bw * sbytes; img = row * bh;
+    EnterCriticalSection(&dev->heap_lock);
+    if (dev->ds_scratch_size < img) {
+        struct WMTBufferInfo bi; UINT64 sz = img < (4u << 20) ? (4u << 20) : (img + 0xffff) & ~(UINT64)0xffff;
+        old = dev->ds_scratch;   /* released once the GPU is past the copies that used it */
+        memset(&bi, 0, sizeof bi); bi.length = sz; bi.options = WMTResourceStorageModePrivate;
+        dev->ds_scratch = MTLDevice_newBuffer(dev->mtl_device, &bi);
+        dev->ds_scratch_size = dev->ds_scratch ? sz : 0;
+    }
+    LeaveCriticalSection(&dev->heap_lock);
+    if (old) mad_release_after_gpu(dev, old);
+    if (!dev->ds_scratch) { MAD_SKIP(e); return 1; }
+    if (InterlockedIncrement(&said) <= 16)
+        d3d12_log("[madeira-d3d12] reinterpret copy '%s' format %u %ux%u -> '%s' format %u %ux%u through a staging buffer\n",
+                  s->name ? s->name : "?", (unsigned)s->desc.Format, sw, sh, d->name ? d->name : "?", (unsigned)d->desc.Format, dw, dh);
+    memset(&k1, 0, sizeof k1);
+    k1.type = WMTBlitCommandCopyFromTextureToBuffer;
+    k1.src = s->texture; k1.slice = c->u.tt.sslice; k1.level = c->u.tt.slevel;
+    k1.origin.x = c->u.tt.sx; k1.origin.y = c->u.tt.sy; k1.origin.z = c->u.tt.sz;
+    k1.size.width = sw; k1.size.height = sh; k1.size.depth = 1;
+    k1.dst = dev->ds_scratch; k1.offset = 0; k1.bytes_per_row = (UINT32)row; k1.bytes_per_image = (UINT32)img;
+    MTLBlitCommandEncoder_encodeCommands(e->benc, (const struct wmtcmd_base *)&k1);
+    exec_end(e);   /* the staging buffer is written, then read: two encoders */
+    if (!exec_begin_blit(e)) { MAD_SKIP(e); return 1; }
+    memset(&k2, 0, sizeof k2);
+    k2.type = WMTBlitCommandCopyFromBufferToTexture;
+    k2.src = dev->ds_scratch; k2.src_offset = 0; k2.bytes_per_row = (UINT32)row; k2.bytes_per_image = (UINT32)img;
+    k2.size.width = dw; k2.size.height = dh; k2.size.depth = 1;
+    k2.dst = d->texture; k2.slice = c->u.tt.dslice; k2.level = c->u.tt.dlevel;
+    k2.origin.x = c->u.tt.dx; k2.origin.y = c->u.tt.dy; k2.origin.z = c->u.tt.dz;
+    MTLBlitCommandEncoder_encodeCommands(e->benc, (const struct wmtcmd_base *)&k2);
+    return 1;
+}
+
 #define MAD_FILLPAT_BYTES (256u << 10)   /* ml1151: one exact UAV-clear pattern buffer */
 /* ml1310: BC uploads on a GPU that cannot sample BC.
  *
@@ -9289,6 +9370,7 @@ static void exec_copy(struct mad_exec *e, const struct mad_cmd *c) {
             exec_copy_aspect(e, c);   /* a depth or stencil plane to or from a colour texture */
             return;
         }
+        if (exec_copy_reinterp(e, c)) return;   /* uint texels to BC blocks, or back */
         memset(&k, 0, sizeof k);
         k.type = WMTBlitCommandCopyFromTextureToTexture;
         k.src = c->u.tt.src->texture; k.src_slice = c->u.tt.sslice; k.src_level = c->u.tt.slevel;
@@ -11914,20 +11996,59 @@ static void mad_hp_free_locked(struct mad_texheap *h, UINT64 off, UINT64 size) {
  * heaps freed with placed resources still held by an in-flight command buffer
  * are the new lifetime in ml1145. */
 static void mad_mheap_reclaim(struct mad_device *d, int all) {
-    obj_handle_t done_list[64]; void *done_mem[64]; unsigned nd = 0, i = 0;
+    obj_handle_t done_list[64], done_obj[64]; void *done_mem[64]; unsigned nd, i, phase;
     UINT64 done;
     if (!d) return;
     done = mad_gpu_completed(d);
-    EnterCriticalSection(&d->heap_lock);
-    while (i < d->nmhret && nd < 64) {
-        if (all || d->mhret[i].serial + 2 <= done) { done_list[nd] = d->mhret[i].heap; done_mem[nd++] = d->mhret[i].mem; d->mhret[i] = d->mhret[--d->nmhret]; }
-        else i++;
+    /* Phase 0 releases textures and views (mad_release_after_gpu) before phase 1
+     * releases heaps and storage, so a placed texture never outlives its heap;
+     * each phase takes every ready entry, 64 at a time, since textures can
+     * queue hundreds a frame. */
+    for (phase = 0; phase < 2; phase++) do {
+        nd = 0; i = 0;
+        EnterCriticalSection(&d->heap_lock);
+        while (i < d->nmhret && nd < 64) {
+            if ((phase == 0) == (d->mhret[i].obj != 0) && (all || d->mhret[i].serial + 2 <= done)) {
+                done_list[nd] = d->mhret[i].heap; done_mem[nd] = d->mhret[i].mem; done_obj[nd++] = d->mhret[i].obj;
+                d->mhret[i] = d->mhret[--d->nmhret];
+            }
+            else i++;
+        }
+        LeaveCriticalSection(&d->heap_lock);
+        for (i = 0; i < nd; i++) {
+            if (done_obj[i]) NSObject_release(done_obj[i]);   /* a released resource's texture or view, after the GPU */
+            if (done_list[i]) { mad_unresident(d, done_list[i]); NSObject_release(done_list[i]); }
+            if (done_mem[i]) VirtualFree(done_mem[i], 0, MEM_RELEASE);   /* ml1154: a file-backed CPU-visible buffer's storage */
+        }
+    } while (nd == 64);
+}
+/* A released resource's MTLTexture objects (the texture, its typed and extra
+ * views, its resolve texture) are released on the same rule as the heaps
+ * above: once two more command buffers have completed after the last one
+ * committed. A game releases a texture when its fence says the GPU is past
+ * it, but Metal's own command buffer cleanup (IOGPUMetalCommandBufferStorageReset,
+ * on Metal's completion queue) still retains it a little later; released at
+ * once, that retain reached a freed texture and crashed the game while it
+ * loaded. madeira.cfg d3d12 key texture-release-defer = 0 releases at once,
+ * as before. Releases at once when the list cannot grow. */
+static long long mad_cfg_int_pe(const char *key, long long dflt);
+static void mad_release_after_gpu(struct mad_device *d, obj_handle_t obj) {
+    static int on = -1; int queued = 0;
+    if (!obj) return;
+    if (on < 0) {
+        on = mad_cfg_int_pe("texture-release-defer", 1) ? 1 : 0;
+        d3d12_log("[madeira-d3d12] texture-release-defer = %d (madeira.cfg; 0 releases textures at once)\n", on);
     }
-    LeaveCriticalSection(&d->heap_lock);
-    for (i = 0; i < nd; i++) {
-        if (done_list[i]) { mad_unresident(d, done_list[i]); NSObject_release(done_list[i]); }
-        if (done_mem[i]) VirtualFree(done_mem[i], 0, MEM_RELEASE);   /* ml1154: a file-backed CPU-visible buffer's storage */
+    if (on && d) {
+        EnterCriticalSection(&d->heap_lock);
+        if (mad_grow((void **)&d->mhret, &d->mhret_cap, d->nmhret + 1, sizeof *d->mhret)) {
+            d->mhret[d->nmhret].heap = 0; d->mhret[d->nmhret].mem = NULL; d->mhret[d->nmhret].obj = obj;
+            d->mhret[d->nmhret].serial = (UINT64)d->gpu_serial; d->nmhret++; queued = 1;
+        }
+        LeaveCriticalSection(&d->heap_lock);
     }
+    if (!queued) NSObject_release(obj);
+    else if (d->nmhret >= 512) mad_mheap_reclaim(d, 0);   /* a load that frees many textures between presents */
 }
 static void mad_hp_reclaim_locked(struct mad_device *d) {
     UINT64 done = mad_gpu_completed(d); unsigned i = 0;
@@ -13461,8 +13582,8 @@ static ULONG STDMETHODCALLTYPE res_Release(ID3D12Resource *This) {
             for (k = 0; k < r->nxview; k++) mad_uavtex_forget(r, r->xview[k].id);
         }
         if (r->cpu) mad_tvs_forget(r);   /* madeira-bcd typed-view-shadow: before its memory goes */
-        { unsigned k; for (k = 0; k < r->ntview; k++) if (r->tview[k].tex) { NSObject_release(r->tview[k].tex); InterlockedDecrement(&g_tview_live); } }   /* ml905; ml1126: never set members */
-        { unsigned k; for (k = 0; k < r->nxview; k++) if (r->xview[k].tex) { mad_unresident(r->owner, r->xview[k].tex); NSObject_release(r->xview[k].tex); InterlockedDecrement(&g_xview_live); } }   /* ml913 */
+        { unsigned k; for (k = 0; k < r->ntview; k++) if (r->tview[k].tex) { mad_release_after_gpu(r->owner, r->tview[k].tex); InterlockedDecrement(&g_tview_live); } }   /* ml905; ml1126: never set members */
+        { unsigned k; for (k = 0; k < r->nxview; k++) if (r->xview[k].tex) { mad_unresident(r->owner, r->xview[k].tex); mad_release_after_gpu(r->owner, r->xview[k].tex); InterlockedDecrement(&g_xview_live); } }   /* ml913 */
         if (r->metal_bytes) {   /* madeira-bcd metal-gap */
             InterlockedExchangeAdd64(&g_sa_tex_bytes, -(LONG64)r->metal_bytes);
             InterlockedExchangeAdd64(&g_sa_tex_logical, -(LONG64)r->acct_bytes);
@@ -13474,9 +13595,9 @@ static ULONG STDMETHODCALLTYPE res_Release(ID3D12Resource *This) {
         if (r->hp_used && r->owner) mad_hp_release(r->owner, r);   /* ml1072: block returns after the GPU is done with it */
         { unsigned k; for (k = 0; k < r->nview_old; k++) free(r->view_old[k]); free(r->tview); free(r->xview); }
         if (r->buffer) NSObject_release(r->buffer);
-        if (r->texture && !r->borrowed) NSObject_release(r->texture);
+        if (r->texture && !r->borrowed) mad_release_after_gpu(r->owner, r->texture);
         if (r->shared_base) { mad_unresident(r->owner, r->shared_base); NSObject_release(r->shared_base); }
-        if (r->resolve_tmp) NSObject_release(r->resolve_tmp);
+        if (r->resolve_tmp) mad_release_after_gpu(r->owner, r->resolve_tmp);
         if (r->placed_heap) { mad_pl_del(r->placed_heap, r); ID3D12Heap_Release((ID3D12Heap *)r->placed_heap); }   /* ml1145 */
         if (r->own_mem) {   /* ml1154: the GPU may still read it; free after its serial (reclaimed with the ml1148 list) */
             struct mad_device *md = r->owner; int queued = 0;
@@ -13484,7 +13605,7 @@ static ULONG STDMETHODCALLTYPE res_Release(ID3D12Resource *This) {
             if (md) {
                 EnterCriticalSection(&md->heap_lock);
                 if (mad_grow((void **)&md->mhret, &md->mhret_cap, md->nmhret + 1, sizeof *md->mhret)) {
-                    md->mhret[md->nmhret].heap = 0; md->mhret[md->nmhret].mem = r->own_mem;
+                    md->mhret[md->nmhret].heap = 0; md->mhret[md->nmhret].mem = r->own_mem; md->mhret[md->nmhret].obj = 0;
                     md->mhret[md->nmhret].serial = (UINT64)md->gpu_serial; md->nmhret++; queued = 1;
                 }
                 LeaveCriticalSection(&md->heap_lock);
@@ -13966,7 +14087,7 @@ static ULONG STDMETHODCALLTYPE memheap_Release(ID3D12Heap *This) {
             InterlockedExchangeAdd64(&g_mheap_bytes, -(LONG64)h->desc.SizeInBytes);   /* madeira-bcd metal-gap: queued frees are counted apart */
             EnterCriticalSection(&hd->heap_lock);
             if (mad_grow((void **)&hd->mhret, &hd->mhret_cap, hd->nmhret + 1, sizeof *hd->mhret)) {
-                hd->mhret[hd->nmhret].heap = h->mtl; hd->mhret[hd->nmhret].serial = (UINT64)hd->gpu_serial; hd->mhret[hd->nmhret].mem = NULL; hd->nmhret++; queued = 1;
+                hd->mhret[hd->nmhret].heap = h->mtl; hd->mhret[hd->nmhret].serial = (UINT64)hd->gpu_serial; hd->mhret[hd->nmhret].mem = NULL; hd->mhret[hd->nmhret].obj = 0; hd->nmhret++; queued = 1;
             }
             LeaveCriticalSection(&hd->heap_lock);
             if (!queued) { mad_unresident(hd, h->mtl); NSObject_release(h->mtl); }

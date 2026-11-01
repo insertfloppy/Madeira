@@ -875,8 +875,17 @@ enum GameRecommendations {
     /// libcef.dll and its replacement could not start either, so the window went
     /// blank while Agent.exe kept running. MADEIRA_CHILD_ARGS gives Battle.net.exe
     /// (the Chromium browser process) one renderer and the GPU work in-process.
+    /// Version 4 (build 63 logs, 2026-11-01, StarCraft from Battle.net): the store
+    /// page's YouTube trailer started extra renderers (site isolation) and crashed
+    /// one; YouTube is now unresolvable, autoplay waits for a click and embeds share
+    /// the one renderer. The game page's JavaScript JIT kept FEX recompiling for a
+    /// minute until the 32-bit renderer ran out of memory: V8 keeps its interpreter
+    /// and WebAssembly but no optimizing tiers (--jitless left the page blank). With
+    /// that the home page drew at 60 FPS (Cameron). pool-split: the session's JIT
+    /// pool also holds the games Battle.net starts (StarCraft's ClientSdk.dll failed
+    /// to load in a 560 MB pool; split, 880 MB).
     static let battleNet = GameRecommendation(
-        id: "battle-net", title: "Battle.net", version: 3,
+        id: "battle-net", title: "Battle.net", version: 4,
         config: """
         # Madeira's recommended settings for Battle.net.
         # Reset to Recommended, at the bottom of the game's settings, brings them back.
@@ -890,7 +899,8 @@ enum GameRecommendations {
         env.DXMT_SMALL_RINGS = Battle.net Launcher.exe;Battle.net.exe;Agent.exe
         env.WINEDLLOVERRIDES = locationapi=d
         env.MADEIRA_EC_HOOK_TRACE = 0
-        env.MADEIRA_CHILD_ARGS = Battle.net.exe --renderer-process-limit=1 --in-process-gpu
+        env.MADEIRA_CHILD_ARGS = Battle.net.exe --renderer-process-limit=1 --in-process-gpu --js-flags="--no-opt --no-sparkplug" --disable-site-isolation-trials --autoplay-policy=user-gesture-required --host-resolver-rules="MAP youtube.com ~NOTFOUND, MAP *.youtube.com ~NOTFOUND, MAP youtube-nocookie.com ~NOTFOUND, MAP *.youtube-nocookie.com ~NOTFOUND, MAP *.googlevideo.com ~NOTFOUND, MAP *.ytimg.com ~NOTFOUND"
+        pool-split = 1
         """,
         fastSync: true, display: "fit", launchMode: "desktop", startServices: true)
 

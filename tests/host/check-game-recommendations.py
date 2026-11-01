@@ -324,7 +324,9 @@ CHROMIUM = ['pool-low = 1', 'pool-page-fit = 1', 'pool-split = 1', 'env.MADEIRA_
 for ident in ('rockstar-launcher', 'ubisoft-connect', 'battle-net'):
     p = presets[ident]
     if ident in ('ubisoft-connect', 'battle-net'):
-        assert p['version'] >= 2 and not any(line in p['lines'] for line in CHROMIUM[:-1]), (ident, 'no 64-bit Chromium chain')
+        # Battle.net v4 sizes the session's pool for the games it starts (pool-split only).
+        chain = [l for l in CHROMIUM[:-1] if not (ident == 'battle-net' and l == 'pool-split = 1')]
+        assert p['version'] >= 2 and not any(line in p['lines'] for line in chain), (ident, 'no 64-bit Chromium chain')
         assert 'env.MADEIRA_WOW_PLACEHOLDERS = 1' in p['lines'] and 'env.MADEIRA_WOW_MIN_FREE_GB = 2' in p['lines'], ident
     else:
         assert all(line in p['lines'] for line in CHROMIUM), (ident, 'the Chromium chain')
@@ -343,8 +345,15 @@ assert 'env.WINEDLLOVERRIDES = locationapi=d' in presets['battle-net']['lines'],
 # Battle.net.exe) gets one renderer and in-process GPU work through MADEIRA_CHILD_ARGS.
 for ident, exe in (('battle-net', 'Battle.net.exe'),):
     want = 'env.MADEIRA_CHILD_ARGS = %s --renderer-process-limit=1 --in-process-gpu' % exe
-    assert want in presets[ident]['lines'], (ident, 'fewer Chromium helpers')
-assert presets['ubisoft-connect']['version'] >= 5 and presets['battle-net']['version'] >= 3
+    assert any(l == want or l.startswith(want + ' ') for l in presets[ident]['lines']), (ident, 'fewer Chromium helpers')
+assert presets['ubisoft-connect']['version'] >= 5 and presets['battle-net']['version'] >= 4
+# Build 63 (2026-11-01): YouTube trailers and the store pages' JavaScript JIT filled Battle.net's one renderer.
+bnet_args = [l for l in presets['battle-net']['lines'] if l.startswith('env.MADEIRA_CHILD_ARGS')][0]
+for sw in ('--js-flags="--no-opt --no-sparkplug"', '--disable-site-isolation-trials',
+           '--autoplay-policy=user-gesture-required', 'MAP *.googlevideo.com ~NOTFOUND'):
+    assert sw in bnet_args, sw
+assert '--jitless' not in bnet_args, 'jitless also turns off WebAssembly (blank page)'
+assert 'pool-split = 1' in presets['battle-net']['lines']
 # Ubisoft's CEF ignores those switches (log 16:16Z): upc.exe alone is told 479 MB instead, which caps
 # Chromium at three renderers (exe-phys-mb, virtual_ios.c ios_exe_phys_bytes).
 assert 'exe-phys-mb = upc.exe:479' in presets['ubisoft-connect']['lines']

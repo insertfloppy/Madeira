@@ -28,7 +28,7 @@ folder, and each installer by the name it downloads with:
 |---|---|
 | `Ubisoft Game Launcher\UbisoftConnect.exe`, `upc.exe`, `Uplay.exe` | `ubisoft-connect` (v5) |
 | `UbisoftConnectInstaller.exe` | `ubisoft-connect-setup` |
-| `Battle.net\Battle.net Launcher.exe`, `Battle.net.exe` | `battle-net` (v3) |
+| `Battle.net\Battle.net Launcher.exe`, `Battle.net.exe` | `battle-net` (v4) |
 | `Battle.net-Setup.exe` | `battle-net-setup` |
 | `Rockstar Games\Launcher\Launcher.exe` | `rockstar-launcher` (125hz) |
 | `Rockstar-Games-Launcher.exe` | `rockstar-launcher-setup` (125hz) |
@@ -109,6 +109,16 @@ Final Fantasy XIV's launcher is in the same section, for installing and updating
 game only: its window is Internet Explorer's engine, so its lists are the standard
 line in the Wine desktop with services first (its InstallShield installer stayed
 black when started directly on build 48). The game signs in through Madeira (docs/FFXIV.md).
+
+Battle.net v4 (build 63 logs, 2026-11-01): the store pages' YouTube trailers and
+their JavaScript JIT filled the client's one 32-bit renderer. The list blocks
+YouTube (`--host-resolver-rules`), keeps embeds in that renderer, waits for a
+click before playing video, and keeps V8 to its interpreter (`--js-flags="--no-opt
+--no-sparkplug"`; `--jitless` turned WebAssembly off and left the page blank).
+The home page then drew at 60 FPS. `pool-split` gives the games Battle.net starts
+a bigger JIT pool. A 64-bit game started by 32-bit Battle.net.exe (StarCraft) used
+to resolve its parent's guest window while it booted and closed the app; the
+child's boot thread now resolves none ([child-64-boot], loader_ios.c).
 
 ## Ubisoft repairs
 

@@ -10315,12 +10315,31 @@ static struct ios_wow_window *ios_wow_slot_at_base( ULONG_PTR base )
  * ios_jit_current_peb() cannot resolve the PEB.  `owner` is the owning
  * process's own boot thread, so the fallback can only resolve to that
  * process's window. */
+/* madeira-bcd [child-64-boot]: set by wine_ios_child_main on a 64-bit child's
+ * boot thread from entry until its own TEB is published. Build 63, 2026-11-01
+ * (StarCraft started by 32-bit Battle.net.exe): the boot thread of x64
+ * StarCraft.exe resolved the PARENT's guest window (0x7600000000), so its TEB
+ * came out of that window's block, its PEB was placed under the 4 GB guest
+ * ceiling (ml959 LIMIT-VIOLATED), the child counted as WoW64 and loaded
+ * wow64.dll, and ntdll faulted on a NULL read 2000 times until the redelivery
+ * guard killed the whole app. Two earlier runs of the same launch resolved no
+ * window and StarCraft started. A 64-bit process never has a window, so
+ * during that gap nothing may resolve one, whatever the thread's inherited
+ * TSD or a reused pthread_t says. */
+static __thread int ios_child_boot_no_window;
+
+void ios_wow_child_boot_no_window( int on )
+{
+    ios_child_boot_no_window = on;
+}
+
 static struct ios_wow_window *ios_wow_slot_current(void)
 {
     struct ios_wow_window *slot;
     unsigned i, n = ios_wow_window_count;
 
     if (!n) return NULL;   /* no window in this session: nothing to resolve */
+    if (ios_child_boot_no_window) return NULL;
     if ((slot = ios_wow_slot_for_peb( ios_jit_current_peb() ))) return slot;
     for (i = 0; i < n; i++)
         if (ios_wow_windows[i].base && !ios_wow_windows[i].leaked &&
@@ -11855,6 +11874,7 @@ ULONG ios_wow_guest_addr( const void *host ) { return PtrToUlong( host ); }
 void ios_wow_translate_limits( ULONG_PTR *l, ULONG_PTR *h ) { }
 NTSTATUS ios_wow_window_reserve(void) { return STATUS_NOT_SUPPORTED; }
 void ios_wow_window_bind( void *peb_id ) { }
+void ios_wow_child_boot_no_window( int on ) { }
 void ios_wow_window_release( void *peb_id ) { }
 void ios_wow_window_release_current(void) { }
 void ios_wow_window_retire_current(void) { }

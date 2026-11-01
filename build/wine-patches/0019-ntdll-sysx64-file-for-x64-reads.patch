@@ -1,0 +1,145 @@
+Subject: [PATCH] ntdll: give an x64 program's read of a system32 DLL the sysx64 file (opt-in)
+
+iOS-Madeira [sysx64-file]: system32 holds the pure ARM64 DLLs and sysx64 the
+x64-callable (ARM64EC) builds the loader gives an x64 process. Black Ops III
+(build 64, 2026-11-01) opens system32\ntdll.dll itself, maps it as data and
+copies the x64 syscall stubs out of it into a table of 32-byte entries; the
+ARM64 file has none, the table stays 0xCC and the game dies on 80000003 at its
+first direct syscall. With env MADEIRA_SYSX64_FILE=1, NtCreateFile in an x64
+process opens sysx64\<name>.dll instead of system32\<name>.dll when the open
+only reads an existing file and sysx64 has it. The loader's own opens keep
+their name (it already falls back to sysx64), except for ntdll.dll, which the
+loader never opens. Off by default. Companion of env.MADEIRA_SYSX64_IMAGE,
+which covers a program's own image-section maps.
+
+diff --git a/dlls/ntdll/unix/file.c b/dlls/ntdll/unix/file.c
+index 2926e371..cabbaaaf 100644
+--- a/dlls/ntdll/unix/file.c
++++ b/dlls/ntdll/unix/file.c
+@@ -5511,6 +5511,104 @@ static void ios_video_read_note( HANDLE h, unsigned int status, UINT got, LARGE_
+ }
+ #endif
+ 
++#ifdef WINE_IOS
++/* sysx64-file-test:begin */
++/* madeira sysx64-file: env.MADEIRA_SYSX64_FILE = 1 (opt-in, per game). On
++ * Windows on ARM an x64 program that reads C:\windows\system32\ntdll.dll gets
++ * an ARM64X file whose x64 half has the usual "mov r10, rcx; mov eax, N;
++ * syscall" stubs. Here system32 holds the pure ARM64 builds and the
++ * x64-callable (ARM64EC) builds live in C:\windows\sysx64, which is also what
++ * the loader gave the process. Black Ops III (build 64, 2026-11-01) reads
++ * system32\ntdll.dll from disk, maps it as data and copies syscall stubs out
++ * of it into a table of 32-byte entries; from the ARM64 file it finds none,
++ * the table stays int3 (0xCC) and the first direct syscall ends the game with
++ * 80000003. With the switch, an x64 process that opens a DLL right in
++ * system32 for reading gets the sysx64 file of the same name when there is
++ * one. Opens that write, create, or come from the loader (which already falls
++ * back to sysx64 on its own) keep the file they named. Log tag [sysx64-file]. */
++static BOOL ios_sysx64_file_name( const OBJECT_ATTRIBUTES *attr, ACCESS_MASK access, ULONG sharing,
++                                  ULONG disposition, ULONG options, UNICODE_STRING *out, WCHAR *path )
++{
++    static const WCHAR dir[] = {'\\','w','i','n','d','o','w','s','\\','s','y','s','t','e','m','3','2','\\'};
++    static const WCHAR x64[] = {'s','y','s','x','6','4'};
++    static const ACCESS_MASK writes = GENERIC_WRITE | GENERIC_ALL | MAXIMUM_ALLOWED | DELETE | WRITE_DAC |
++                                      WRITE_OWNER | FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA |
++                                      FILE_WRITE_ATTRIBUTES;
++    extern int ios_is_arm64ec_cur(void);
++    static int on = -1, said;
++    const UNICODE_STRING *name = attr->ObjectName;
++    OBJECT_ATTRIBUTES x64_attr;
++    FILE_BASIC_INFORMATION info;
++    USHORT dlen = ARRAY_SIZE(dir), len, i, j, at = 0;
++    NTSTATUS status;
++
++    if (on < 0)
++    {
++        const char *e = getenv( "MADEIRA_SYSX64_FILE" );
++        on = e && e[0] == '1' && !e[1];
++    }
++    if (!on || attr->RootDirectory || !name || !name->Buffer) return FALSE;
++    if (disposition != FILE_OPEN || (access & writes)) return FALSE;
++    if (options & (FILE_DIRECTORY_FILE | FILE_OPEN_BY_FILE_ID | FILE_DELETE_ON_CLOSE)) return FALSE;
++    len = name->Length / sizeof(WCHAR);
++    if (len <= dlen + 4 || len + 2 >= MAX_PATH) return FALSE;
++    /* the loader's own opens (loader.c open_dll_file): it finds the sysx64 build
++     * itself. ntdll.dll is the exception, since the loader never opens it (it is
++     * loaded before any of this) and a program may open it with the same flags. */
++    if (access == (GENERIC_READ | SYNCHRONIZE) &&
++        options == (FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE) &&
++        (sharing == (FILE_SHARE_READ | FILE_SHARE_DELETE) || sharing == FILE_SHARE_READ))
++    {
++        static const WCHAR ntdllW[] = {'\\','n','t','d','l','l','.','d','l','l'};
++        const WCHAR *tail = name->Buffer + len - ARRAY_SIZE(ntdllW);
++
++        for (j = 0; j < ARRAY_SIZE(ntdllW); j++)
++        {
++            WCHAR c = tail[j];
++            if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
++            if (c != ntdllW[j]) return FALSE;
++        }
++    }
++    if (!ios_is_arm64ec_cur()) return FALSE;   /* x64 code in an ARM64EC process */
++
++    for (i = 0; i + dlen < len && !at; i++)
++    {
++        for (j = 0; j < dlen; j++)
++        {
++            WCHAR c = name->Buffer[i + j];
++            if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
++            if (c != dir[j]) break;
++        }
++        if (j == dlen) at = i + 9;   /* index of "system32", after "\windows\" */
++    }
++    if (!at) return FALSE;
++    for (i = at + 9; i < len; i++) if (name->Buffer[i] == '\\') return FALSE;   /* a file right in system32 */
++    {
++        const WCHAR *ext = name->Buffer + len - 4;
++        if (ext[0] != '.' || (ext[1] | 0x20) != 'd' || (ext[2] | 0x20) != 'l' || (ext[3] | 0x20) != 'l')
++            return FALSE;
++    }
++
++    /* the same path with "system32" replaced by "sysx64" */
++    memcpy( path, name->Buffer, at * sizeof(WCHAR) );
++    memcpy( path + at, x64, sizeof(x64) );
++    memcpy( path + at + ARRAY_SIZE(x64), name->Buffer + at + 8, (len - at - 8) * sizeof(WCHAR) );
++    path[len - 2] = 0;
++    out->Buffer = path;
++    out->Length = (len - 2) * sizeof(WCHAR);
++    out->MaximumLength = (len - 1) * sizeof(WCHAR);
++    x64_attr = *attr;
++    x64_attr.ObjectName = out;
++    status = NtQueryAttributesFile( &x64_attr, &info );
++    if (said++ < 32)
++        dprintf( 2, "[sysx64-file] x64 read of %s (access 0x%x share 0x%x options 0x%x): %s %s (0x%x)\n",
++                 debugstr_us(name), (unsigned)access, (unsigned)sharing, (unsigned)options,
++                 status ? "keeping it, no" : "opening", debugstr_us(out), (unsigned)status );
++    return !status;
++}
++/* sysx64-file-test:end */
++#endif
++
+ NTSTATUS WINAPI NtCreateFile( HANDLE *handle, ACCESS_MASK access, OBJECT_ATTRIBUTES *attr,
+                               IO_STATUS_BLOCK *io, LARGE_INTEGER *alloc_size,
+                               ULONG attributes, ULONG sharing, ULONG disposition,
+@@ -5522,6 +5620,10 @@ NTSTATUS WINAPI NtCreateFile( HANDLE *handle, ACCESS_MASK access, OBJECT_ATTRIBU
+     BOOL name_hidden = FALSE;
+     BOOL created = FALSE;
+     unsigned int status;
++#ifdef WINE_IOS
++    UNICODE_STRING x64_name;
++    WCHAR x64_path[MAX_PATH];
++#endif
+ 
+     TRACE( "handle=%p access=%08x name=%s objattr=%08x root=%p sec=%p io=%p alloc_size=%p "
+            "attr=%08x sharing=%08x disp=%d options=%08x ea=%p.0x%08x\n",
+@@ -5535,6 +5637,10 @@ NTSTATUS WINAPI NtCreateFile( HANDLE *handle, ACCESS_MASK access, OBJECT_ATTRIBU
+     if (alloc_size) FIXME( "alloc_size not supported\n" );
+ 
+     new_attr = *attr;
++#ifdef WINE_IOS
++    if (ios_sysx64_file_name( attr, access, sharing, disposition, options, &x64_name, x64_path ))
++        new_attr.ObjectName = &x64_name;   /* madeira sysx64-file */
++#endif
+     if (options & FILE_OPEN_BY_FILE_ID)
+     {
+         status = file_id_to_unix_file_name( &new_attr, &unix_name, &nt_name );

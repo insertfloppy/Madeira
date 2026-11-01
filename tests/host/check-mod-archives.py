@@ -42,8 +42,10 @@ check(project.count('A1009C05 /* ModArchives.swift in Sources */') == 2 and proj
       'ModArchives.swift is in the app target')
 check('#import "ModArchiveLZMA.h"' in bridging and 'liblzma.tbd in Frameworks' in project, "liblzma's calls are declared and linked")
 check('ModArchive.unpack(' in mods and 'ModArchive.kind(of:' in mods, 'the Mods page unpacks .7z and .rar mods')
-check('folder ? [.folder] : [.zip, .archive, .data]' in mods and 'asCopy: true' in mods and '.fileImporter' not in mods,
-      'files and folders have their own pickers, opened as copies (in-place picks fail with a mismatched App ID)')
+check('folder ? [.folder] : [.zip, .archive, .data]' in mods and 'asCopy: !folder' in mods and '.fileImporter' not in mods,
+      'files and folders have their own pickers; files open as copies (in-place picks fail with a mismatched App ID)')
+check('asCopy: true' not in mods and 'FolderPickerSigning.willPick()' in mods,
+      'a folder is never picked as a copy (iOS throws and Madeira ends) and gets the signing fix')
 check('import SwiftUI' not in source and 'LibraryModel' not in source, 'ModArchives.swift is Foundation only')
 
 expected = json.loads((fixtures / 'expected.json').read_text(encoding='utf-8'))

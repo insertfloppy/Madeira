@@ -124,6 +124,11 @@ that module under virtual_mutex faulted, the exception thread waited for the sam
 lock and the whole session froze. The name is now read with checked reads, and the
 fault handler waits at most 2 s for the lock ([fault-deadlock], virtual_ios.c).
 
+Game details › Launch arguments for Battle.net's launcher (Battle.net Launcher.exe
+or Battle.net.exe) has a row of chips, one per Blizzard game: a tap sets
+`--exec="launch <code>"` (one game at a time; tap again to clear), so the entry opens
+Battle.net and starts that game. Codes: LauncherID.blizzardCodes.
+
 ## Ubisoft repairs
 
 Older Ubisoft games (Assassin's Creed and others) look for `Uplay.exe`, the

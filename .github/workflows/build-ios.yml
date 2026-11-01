@@ -376,6 +376,7 @@ jobs:
           python3 tests/host/check-exe-phys.py
           python3 tests/host/check-child-64-boot.py
           python3 tests/host/check-fault-deadlock.py
+          python3 tests/host/check-blizzard-chips.py
           python3 tests/host/check-game-recommendations.py --require-swift
           python3 tests/host/check-ini-editor.py --require-swift
           python3 tests/host/check-dll-overrides.py --require-swift

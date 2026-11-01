@@ -40,7 +40,8 @@ Madeira asks GOG's content system for the newest Windows build on the default
 branch (generation 2). It installs the game's depots and those of DLC the account
 owns, in English when the game has it, else the first language it lists, and
 the 64-bit depots when a build has both. GOG's support files (installer scripts)
-are left out.
+are left out, except the install script `goggame-<id>.script` (see "Install
+script"), which goes to the folder's root.
 
 Installs use `drive_c/GOG Games/<folder>`. Paths are checked against that
 folder. Every chunk is checked by the MD5 of its compressed bytes and of its
@@ -61,6 +62,23 @@ primary file task names the program, its arguments and its working folder,
 which become the game's library entry. A build without that file uses the
 folder's only program. Otherwise the install stops with a message to add the
 game by hand.
+
+## Install script
+
+GOG Galaxy runs a build's `goggame-<id>.script` after an install with its script
+interpreter. Its `setRegistry` actions are values a game or its launcher reads to
+find itself: The Witcher: Enhanced Edition's `launcher.exe` quits after half a
+second, without a message, when `HKLM\Software\CD Projekt Red\The Witcher` has no
+`InstallFolder`. Before each Play of a GOG game, or of a program added from a GOG
+game's folder, Madeira writes those values into the prefix
+(`SwiftGOG/GOGInstallScript.swift`, written with the Steam install-script writer,
+so HKLM `Software` values land in both registry views). `{app}` and `{supportDir}`
+become the game's folder. Actions for another language or for 32-bit Windows only
+are skipped. A value the prefix already has is kept, except one made from the
+game's folder, which follows the folder. `savePath`, `setIni`, `installSDB` and
+`Execute` are left out and logged. Log tag `[gog-script]`. A game installed before
+this change gets its script with Repair installed files.
+`python3 tests/host/check-gog-install-script.py` checks it.
 
 ## Redistributables
 
@@ -137,4 +155,5 @@ as intraducine carried it to Madeira in willfaust/Madeira #479: copyright the
 Playport authors, GPL-3.0-or-later with the Madeira Converter Exception, version 1.
 Madeira's changes: type names prefixed `Galaxy`, no ContentKit package, the token
 from Madeira's own GOG sign-in, and two compile fixes. Its 14 tests pass against
-this copy. Which redistributables are skipped follows Playport's GOGDependencies.
+this copy. The install script reader follows Playport's
+`GOGInstallScript` (GPL-3.0-or-later) for the script's shape and which actions matter. Which redistributables are skipped follows Playport's GOGDependencies.

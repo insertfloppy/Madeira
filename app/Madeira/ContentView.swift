@@ -2652,6 +2652,9 @@ struct ContentView: View {
         // Ubisoft games look for Uplay.exe and the client's registry values, whoever starts
         // them; nothing happens without Ubisoft Connect installed (LauncherSupport.swift).
         LauncherSupport.repairUbisoft()
+        // A GOG game's install-script registry values (The Witcher's launcher needs its
+        // InstallFolder), for its own entry or a program added from its folder.
+        GOGLibrary.shared.writeInstallScriptRegistry(for: entry)
         if entry.gogProductID != nil {
             // A GOG game: its redistributable installers still to run, before the game
             // (from the services batch), and GOG's game services while it runs.

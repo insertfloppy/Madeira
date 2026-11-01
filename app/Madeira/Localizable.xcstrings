@@ -13091,36 +13091,36 @@
         }
       }
     },
-    "Pick a folder on a USB or SSD drive, or a whole drive that already has games on it. Windows sees it as a drive letter and as C:\\External\\<name>. Find games adds the games on it to the library; Steam libraries on it (steamapps or SteamLibrary) show up in the Steam section. Install Steam games on picks where new Steam downloads go by default (each install can still pick another place); on a drive they go into <name>\\SteamLibrary. Unplugging the drive while a game runs will close it. Restart Madeira after adding a folder for Windows to list the new drive. If the picker's Open button does nothing, Madeira's bundle ID does not match the App ID it is signed with; the note above says how to fix that.": {
+    "Pick a folder on a USB or SSD drive, or a whole drive that already has games on it. Windows sees it as a drive letter and as C:\\External\\<name>. Find games adds the games on it to the library; Steam libraries on it (steamapps or SteamLibrary) show up in the Steam section. Install Steam games on picks where new Steam downloads go by default (each install can still pick another place); on a drive they go into <name>\\SteamLibrary. Unplugging the drive while a game runs will close it. Restart Madeira after adding a folder for Windows to list the new drive.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wähle einen Ordner auf einem USB- oder SSD-Laufwerk oder ein ganzes Laufwerk, auf dem schon Spiele sind. Windows sieht es als Laufwerksbuchstaben und als C:\\External\\<name>. Spiele finden fügt die Spiele darauf der Bibliothek hinzu; Steam-Bibliotheken darauf (steamapps oder SteamLibrary) erscheinen im Steam-Bereich. Steam-Spiele installieren auf legt fest, wohin neue Steam-Downloads standardmäßig gehen (jede Installation kann trotzdem einen anderen Ort wählen); auf einem Laufwerk landen sie in <name>\\SteamLibrary. Wird das Laufwerk abgezogen, während ein Spiel läuft, wird es geschlossen. Starte Madeira nach dem Hinzufügen eines Ordners neu, damit Windows das neue Laufwerk anzeigt. Wenn die Taste Öffnen in der Auswahl nichts tut, passt die Bundle-ID von Madeira nicht zur App-ID, mit der es signiert ist; der Hinweis oben sagt, wie du das behebst."
+            "value": "Wähle einen Ordner auf einem USB- oder SSD-Laufwerk oder ein ganzes Laufwerk, auf dem schon Spiele sind. Windows sieht es als Laufwerksbuchstaben und als C:\\External\\<name>. Spiele finden fügt die Spiele darauf der Bibliothek hinzu; Steam-Bibliotheken darauf (steamapps oder SteamLibrary) erscheinen im Steam-Bereich. Steam-Spiele installieren auf legt fest, wohin neue Steam-Downloads standardmäßig gehen (jede Installation kann trotzdem einen anderen Ort wählen); auf einem Laufwerk landen sie in <name>\\SteamLibrary. Wird das Laufwerk abgezogen, während ein Spiel läuft, wird es geschlossen. Starte Madeira nach dem Hinzufügen eines Ordners neu, damit Windows das neue Laufwerk anzeigt."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Elige una carpeta de una unidad USB o SSD, o una unidad entera que ya tenga juegos. Windows la ve como una letra de unidad y como C:\\External\\<name>. Buscar juegos añade sus juegos a la biblioteca; las bibliotecas de Steam que contenga (steamapps o SteamLibrary) aparecen en la sección Steam. Instalar juegos de Steam en elige adónde van por defecto las nuevas descargas de Steam (cada instalación puede elegir otro sitio); en una unidad van a <name>\\SteamLibrary. Desconectar la unidad con un juego en marcha lo cerrará. Reinicia Madeira tras añadir una carpeta para que Windows muestre la nueva unidad. Si el botón Abrir del selector no hace nada, el ID de paquete de Madeira no coincide con el App ID con el que está firmado; la nota de arriba explica cómo arreglarlo."
+            "value": "Elige una carpeta de una unidad USB o SSD, o una unidad entera que ya tenga juegos. Windows la ve como una letra de unidad y como C:\\External\\<name>. Buscar juegos añade sus juegos a la biblioteca; las bibliotecas de Steam que contenga (steamapps o SteamLibrary) aparecen en la sección Steam. Instalar juegos de Steam en elige adónde van por defecto las nuevas descargas de Steam (cada instalación puede elegir otro sitio); en una unidad van a <name>\\SteamLibrary. Desconectar la unidad con un juego en marcha lo cerrará. Reinicia Madeira tras añadir una carpeta para que Windows muestre la nueva unidad."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "USB 또는 SSD 드라이브의 폴더나 이미 게임이 있는 드라이브 전체를 고르세요. Windows에서는 드라이브 문자와 C:\\External\\<name>으로 보입니다. 게임 찾기는 그 안의 게임을 라이브러리에 추가하고, 그 안의 Steam 라이브러리(steamapps 또는 SteamLibrary)는 Steam 섹션에 표시됩니다. Steam 게임 설치 위치는 새 Steam 다운로드의 기본 위치를 고릅니다(설치할 때마다 다른 곳을 고를 수도 있음). 드라이브에서는 <name>\\SteamLibrary에 들어갑니다. 게임 실행 중에 드라이브를 빼면 게임이 닫힙니다. 폴더를 추가한 뒤 Windows가 새 드라이브를 나열하려면 Madeira를 다시 시작하세요. 선택기의 열기 버튼이 아무 반응도 없으면 Madeira의 번들 ID가 서명에 쓰인 앱 ID와 일치하지 않는 것입니다. 해결 방법은 위의 안내에 있습니다."
+            "value": "USB 또는 SSD 드라이브의 폴더나 이미 게임이 있는 드라이브 전체를 고르세요. Windows에서는 드라이브 문자와 C:\\External\\<name>으로 보입니다. 게임 찾기는 그 안의 게임을 라이브러리에 추가하고, 그 안의 Steam 라이브러리(steamapps 또는 SteamLibrary)는 Steam 섹션에 표시됩니다. Steam 게임 설치 위치는 새 Steam 다운로드의 기본 위치를 고릅니다(설치할 때마다 다른 곳을 고를 수도 있음). 드라이브에서는 <name>\\SteamLibrary에 들어갑니다. 게임 실행 중에 드라이브를 빼면 게임이 닫힙니다. 폴더를 추가한 뒤 Windows가 새 드라이브를 나열하려면 Madeira를 다시 시작하세요."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Escolha uma pasta num drive USB ou SSD, ou um drive inteiro que já tenha jogos. O Windows o vê como uma letra de unidade e como C:\\External\\<name>. Encontrar jogos adiciona os jogos dele à biblioteca; bibliotecas Steam nele (steamapps ou SteamLibrary) aparecem na seção Steam. Instalar jogos da Steam em escolhe para onde vão os novos downloads da Steam por padrão (cada instalação ainda pode escolher outro lugar); num drive eles vão para <name>\\SteamLibrary. Desconectar o drive com um jogo rodando vai fechá-lo. Reinicie o Madeira após adicionar uma pasta para o Windows listar o novo drive. Se o botão Abrir do seletor não fizer nada, o ID do pacote do Madeira não corresponde ao App ID com que ele foi assinado; a nota acima explica como corrigir."
+            "value": "Escolha uma pasta num drive USB ou SSD, ou um drive inteiro que já tenha jogos. O Windows o vê como uma letra de unidade e como C:\\External\\<name>. Encontrar jogos adiciona os jogos dele à biblioteca; bibliotecas Steam nele (steamapps ou SteamLibrary) aparecem na seção Steam. Instalar jogos da Steam em escolhe para onde vão os novos downloads da Steam por padrão (cada instalação ainda pode escolher outro lugar); num drive eles vão para <name>\\SteamLibrary. Desconectar o drive com um jogo rodando vai fechá-lo. Reinicie o Madeira após adicionar uma pasta para o Windows listar o novo drive."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Выберите папку на USB- или SSD-диске или весь диск, на котором уже есть игры. Windows видит его как букву диска и как C:\\External\\<name>. «Найти игры» добавляет игры с него в библиотеку; библиотеки Steam на нём (steamapps или SteamLibrary) появятся в разделе Steam. «Устанавливать игры Steam на» выбирает, куда по умолчанию идут новые загрузки Steam (у каждой установки можно выбрать другое место); на диске они идут в <name>\\SteamLibrary. Если отключить диск во время игры, она закроется. Перезапустите Madeira после добавления папки, чтобы Windows увидела новый диск. Если кнопка «Открыть» в окне выбора ничего не делает, идентификатор пакета Madeira не совпадает с App ID, которым он подписан; как это исправить, написано в примечании выше."
+            "value": "Выберите папку на USB- или SSD-диске или весь диск, на котором уже есть игры. Windows видит его как букву диска и как C:\\External\\<name>. «Найти игры» добавляет игры с него в библиотеку; библиотеки Steam на нём (steamapps или SteamLibrary) появятся в разделе Steam. «Устанавливать игры Steam на» выбирает, куда по умолчанию идут новые загрузки Steam (у каждой установки можно выбрать другое место); на диске они идут в <name>\\SteamLibrary. Если отключить диск во время игры, она закроется. Перезапустите Madeira после добавления папки, чтобы Windows увидела новый диск."
           }
         }
       }
@@ -19751,40 +19751,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Они записывают d3d9 / d3d11 / d3d12 / vulkan в madeira.cfg; изменения применяются при следующем старте сеанса. Настройки для отдельной игры задаются в её собственных строках конфигурации (Дополнительно › Конфигурация этой игры)."
-          }
-        }
-      }
-    },
-    "This copy of Madeira is signed with the App ID %@, but its bundle ID is %@. iOS only lets an app open folders on a drive when the two match. Sign Madeira again with the bundle ID set to %@ (in your signer, usually a Bundle ID or \"use profile's App ID\" option), then add the drive here.": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Diese Kopie von Madeira ist mit der App-ID %1$@ signiert, ihre Bundle-ID ist aber %2$@. iOS lässt eine App nur dann Ordner auf einem Laufwerk öffnen, wenn beide übereinstimmen. Signiere Madeira erneut mit der Bundle-ID %3$@ (in deinem Signierwerkzeug meist eine Option „Bundle ID“ oder „use profile's App ID“) und füge das Laufwerk dann hier hinzu."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Esta copia de Madeira está firmada con el App ID %1$@, pero su ID de paquete es %2$@. iOS solo deja que una app abra carpetas de una unidad cuando ambos coinciden. Vuelve a firmar Madeira con el ID de paquete %3$@ (en tu firmador, normalmente una opción «Bundle ID» o «use profile's App ID») y luego añade la unidad aquí."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이 Madeira 사본은 앱 ID %1$@(으)로 서명되었지만 번들 ID는 %2$@입니다. iOS는 두 값이 일치할 때만 앱이 드라이브의 폴더를 열 수 있게 합니다. 번들 ID를 %3$@(으)로 설정해 Madeira를 다시 서명한 다음(서명 도구에서 보통 Bundle ID 또는 \"use profile's App ID\" 옵션) 여기에서 드라이브를 추가하세요."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Esta cópia do Madeira está assinada com o App ID %1$@, mas o ID do pacote é %2$@. O iOS só deixa um app abrir pastas de uma unidade quando os dois são iguais. Assine o Madeira de novo com o ID do pacote %3$@ (no seu assinador, geralmente uma opção \"Bundle ID\" ou \"use profile's App ID\") e depois adicione a unidade aqui."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Эта копия Madeira подписана с App ID %1$@, но её идентификатор пакета — %2$@. iOS позволяет приложению открывать папки на диске, только когда они совпадают. Подпишите Madeira заново с идентификатором пакета %3$@ (в программе для подписи это обычно параметр «Bundle ID» или «use profile's App ID»), затем добавьте диск здесь."
           }
         }
       }

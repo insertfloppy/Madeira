@@ -51,6 +51,8 @@ extern ULONG_PTR ios_wow_base_for_peb( void *peb_id );
  * reserves before its PEB exists).  0 when the caller is not in a WoW
  * process, which makes this the per-process "is this a WoW process" test. */
 extern ULONG_PTR ios_wow_base(void);
+/* [child-64-boot]: no window resolves on this thread while on (virtual_ios.c) */
+extern void ios_wow_child_boot_no_window( int on );
 
 /* Published by the app before __wine_main: nonzero when this session's MAIN
  * image is 32-bit.  virtual_init then arms the session and reserves the main

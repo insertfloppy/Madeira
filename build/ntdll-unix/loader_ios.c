@@ -3847,8 +3847,17 @@ DECLSPEC_EXPORT void wine_ios_child_main( int argc, char *argv[], int child_fd_s
                                  (unsigned)status );
         }
         else
-            dprintf(STDERR_FILENO, "[Wine child] 64-bit image %s machine=0x%x (no guest window)\n",
-                    argc > 1 ? argv[1] : "(none)", ios_child_main_machine);
+        {
+            extern void ios_wow_child_boot_no_window( int on );
+            void *stale_peb = ios_jit_current_peb();
+
+            /* [child-64-boot] (virtual_ios.c): no guest window may resolve on this
+             * thread until the child's own TEB is published below. */
+            ios_wow_child_boot_no_window( 1 );
+            dprintf(STDERR_FILENO, "[Wine child] 64-bit image %s machine=0x%x (no guest window; "
+                    "boot thread's inherited peb=%p, ignored until its own TEB)\n",
+                    argc > 1 ? argv[1] : "(none)", ios_child_main_machine, stale_peb);
+        }
     }
 
     /* Allocate a new TEB for this child "process" thread */
@@ -3973,6 +3982,10 @@ DECLSPEC_EXPORT void wine_ios_child_main( int argc, char *argv[], int child_fd_s
     {
         extern pthread_key_t ios_teb_tls_key;
         pthread_setspecific( ios_teb_tls_key, teb );
+    }
+    {   /* [child-64-boot]: this thread's TEB is now the child's own */
+        extern void ios_wow_child_boot_no_window( int on );
+        ios_wow_child_boot_no_window( 0 );
     }
 
     /* Confirm the TEB is visible at the discovered raw slot, which is what the

@@ -148,15 +148,21 @@ enum GOGCodec {
 
 /// A depot's file list.
 enum GOGDepot {
-    /// The files of one depot (support files, GOG's installer scripts, are left out;
-    /// folders are made as files need them; links are not supported on drive_c).
+    /// The files of one depot (support files, GOG's installer scripts, are left out,
+    /// except the install script `goggame-<id>.script`, which goes to the folder's root
+    /// for its registry values (GOGInstallScript); folders are made as files need them;
+    /// links are not supported on drive_c).
     static func files(_ data: Data, product: String) throws -> [GOGFile] {
         let json = try GOGCodec.json(data, what: "depot")
         guard let items = (json["depot"] as? [String: Any])?["items"] as? [[String: Any]] else { throw GOGFormatError.parse("depot") }
         var files: [GOGFile] = []
         for item in items where item["type"] as? String == "DepotFile" {
-            guard let path = item["path"] as? String, let raw = item["chunks"] as? [[String: Any]] else { throw GOGFormatError.parse("file") }
-            if (item["flags"] as? [String] ?? []).contains("support") { continue }
+            guard var path = item["path"] as? String, let raw = item["chunks"] as? [[String: Any]] else { throw GOGFormatError.parse("file") }
+            if (item["flags"] as? [String] ?? []).contains("support") {
+                let name = path.replacingOccurrences(of: "\\", with: "/").split(separator: "/").last.map(String.init) ?? ""
+                guard GOGInstallScript.isScriptName(name) else { continue }
+                path = name
+            }
             let chunks = try raw.map { chunk -> GOGChunk in
                 guard let md5 = chunk["md5"] as? String, let compressed = chunk["compressedMd5"] as? String,
                       GOGAPI.isHash(md5), GOGAPI.isHash(compressed),
@@ -169,6 +175,13 @@ enum GOGDepot {
                                  md5: (item["md5"] as? String).map { $0.lowercased() }, sha256: (item["sha256"] as? String).map { $0.lowercased() }))
         }
         return files
+    }
+
+    /// The files of several depots, each path once (matched without case, as Windows
+    /// does): the first depot that names a path keeps it.
+    static func unique(_ files: [GOGFile]) -> [GOGFile] {
+        var seen = Set<String>()
+        return files.filter { seen.insert($0.path.lowercased()).inserted }
     }
 }
 

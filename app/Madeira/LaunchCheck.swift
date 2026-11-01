@@ -366,7 +366,7 @@ enum KnownGames {
         KnownGame(id: "project-zomboid", title: "Project Zomboid", appIDs: [108600],
                   folders: ["projectzomboid"], programs: ["projectzomboid64.exe"],
                   tests: [onIPhone17ProMax(build: 60)],
-                  note: "With Madeira's recommended settings. Loading to the main menu takes about 2 to 3 minutes; it isn't frozen, so leave it running."),
+                  note: "With Madeira's recommended settings."),
         KnownGame(id: "megabonk", title: "Megabonk", appIDs: [],
                   folders: ["megabonk"], programs: ["megabonk.exe"],
                   tests: [KnownTest(device: nil, os: nil, build: 31, memoryGB: 0)], note: ""),
@@ -426,17 +426,23 @@ struct KnownIssue: Equatable {
     let title: String
     /// What happens and what to try, in plain words.
     let detail: String
-    /// The report's number on github.com/willfaust/Madeira.
-    let report: Int
+    /// The report's number on github.com/willfaust/Madeira; nil for the project's
+    /// own device-tested notes (those may be on a Tested game).
+    var report: Int? = nil
     /// The Madeira version the report was made on ("0.1.3").
-    let version: String
+    var version = ""
 
-    var link: URL { URL(string: "https://github.com/willfaust/Madeira/issues/\(report)")! }
-    var text: String { detail + " Reported by a player on Madeira \(version); it may behave differently in this build." }
+    var link: URL? { report.map { URL(string: "https://github.com/willfaust/Madeira/issues/\($0)")! } }
+    var text: String { report == nil ? detail : detail + " Reported by a player on Madeira \(version); it may behave differently in this build." }
 }
 
 enum KnownIssues {
     static let all: [KnownIssue] = [
+        // Device-tested on our builds (no upstream report).
+        KnownIssue(id: "project-zomboid-loading", game: "Project Zomboid", appIDs: [108600],
+                   folders: ["projectzomboid"], programs: ["projectzomboid64.exe"], level: .info,
+                   title: "slow first load",
+                   detail: "It takes 2 to 4 minutes to load to the main menu. It isn't frozen, so leave it running. Once in game it runs fine."),
         KnownIssue(id: "silksong-cutscenes", game: "Hollow Knight: Silksong", appIDs: [1030300],
                    folders: ["hollow knight silksong"], programs: ["hollow knight silksong.exe"], level: .info,
                    title: "cutscenes are black",

@@ -168,15 +168,22 @@ expect(LaunchCheck.notes(input).last?.id == "tested", "the good line sorts last"
 expect(LaunchCheck.gigabytes(12 * gb - 1) == "12 GB" && LaunchCheck.gigabytes(gb + gb / 2) == "1.5 GB", "sizes in words")
 // Known issues (reports on github.com/willfaust/Madeira that this build doesn't fix)
 expect(Set(KnownIssues.all.map(\.id)).count == KnownIssues.all.count, "known issue ids are unique")
-expect(KnownIssues.all.allSatisfy { $0.link.absoluteString == "https://github.com/willfaust/Madeira/issues/\($0.report)" && !$0.detail.isEmpty },
-       "every known issue links its report")
-expect(KnownIssues.all.allSatisfy { issue in KnownGames.all.allSatisfy { $0.appIDs.isDisjoint(with: issue.appIDs) } },
-       "no game is both tested and a known issue")
+expect(KnownIssues.all.allSatisfy { issue in !issue.detail.isEmpty && (issue.report == nil
+           || (issue.link?.absoluteString == "https://github.com/willfaust/Madeira/issues/\(issue.report!)" && !issue.version.isEmpty)) },
+       "every reported known issue links its report")
+expect(KnownIssues.all.filter { $0.report != nil }.allSatisfy { issue in KnownGames.all.allSatisfy { $0.appIDs.isDisjoint(with: issue.appIDs) } },
+       "no tested game carries a player report")
+let pz = KnownIssues.find(windowsPath: #"C:\x\steamapps\common\ProjectZomboid"#, steamAppID: 108600)
+input = base; input.knownIssues = pz
+let pzNotes = LaunchCheck.notes(input)
+expect(pz.map(\.id) == ["project-zomboid-loading"] && pzNotes.first?.level == .info && pzNotes.first?.link == nil
+       && pzNotes.first?.detail.hasPrefix("It takes 2 to 4 minutes") == true && pzNotes.first?.detail.contains("Reported by") == false,
+       "Project Zomboid's own loading note: info, no report link")
 expect(KnownIssues.find(windowsPath: #"C:\x\steamapps\common\Hollow Knight Silksong"#, steamAppID: 1030300).map(\.id) == ["silksong-cutscenes"], "Silksong by App ID")
 expect(KnownIssues.find(windowsPath: #"C:\x\steamapps\common\Cyberpunk 2077"#, steamAppID: nil).map(\.id) == ["cyberpunk-launcher"], "Cyberpunk by folder")
 expect(KnownIssues.find(windowsPath: #"C:\Games\Outlast\Binaries\Win32\OLGame.exe"#, steamAppID: nil).map(\.id) == ["outlast-illegal-instruction"], "Outlast by program")
 expect(KnownIssues.find(windowsPath: #"C:\x\steamapps\common\Dark Souls II Scholar of the First Sin"#, steamAppID: 335300).count == 1, "Dark Souls II by App ID")
-expect(KnownIssues.find(windowsPath: #"C:\x\steamapps\common\Counter-Strike Global Offensive"#, steamAppID: 730).isEmpty, "a tested game has no known issue")
+expect(KnownIssues.find(windowsPath: #"C:\x\steamapps\common\Counter-Strike Global Offensive"#, steamAppID: 730).isEmpty, "CS2 has no known issue")
 expect(KnownIssues.find(windowsPath: "", steamAppID: nil).isEmpty, "no path, no App ID: nothing")
 input = base; input.knownIssues = KnownIssues.find(windowsPath: "", steamAppID: 1091500)
 let issueNotes = LaunchCheck.notes(input)

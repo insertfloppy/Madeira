@@ -984,9 +984,32 @@ enum GameRecommendations {
         env.MADEIRA_EC_HOOK_TRACE = 0
         """)
 
+    /// Grounded (Steam; tested on an iPhone 17 Pro Max, build 63, 2026-11-01).
+    /// Unreal's built-in browser (libcef.dll, 95 MB) needs CS2's pool lines. Loading
+    /// into the world reached the 8 GB app memory limit: Unreal commits most of its
+    /// memory as 64 KB reservations, so the swap tier backs whole reservations down
+    /// to 64 KB (broad, ml2191 grows one extent for side-by-side ones), the game's
+    /// images go to the swap file too, and a 1 GB video budget keeps Unreal's
+    /// texture pool small. No switches.
+    static let grounded = GameRecommendation(
+        id: "grounded", title: "Grounded", version: 1,
+        config: """
+        # Madeira's recommended settings for Grounded.
+        # Reset to Recommended, at the bottom of the game's settings, brings them back.
+        pool = 896
+        pool-split = 1
+        env.MADEIRA_X64_IMAGE_NOCOPY = 1
+        swap-mb = 8192
+        swap-mode = 2
+        env.MADEIRA_SWAP_MIN_KB = 64
+        swap-images = 1
+        vram-mb = 1024
+        env.MADEIRA_EC_HOOK_TRACE = 0
+        """)
+
     static let all = [rdr2Steam, rdr2Other, gta5EnhancedSteam, gta5EnhancedOther, ghostOfTsushima, godOfWar, horizonZeroDawn,
                       darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, projectZomboid, projectZomboidB41,
-                      counterStrike2, escapists2, slayTheSpire2, garrysMod, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,
+                      counterStrike2, escapists2, slayTheSpire2, garrysMod, grounded, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,
                       ffxivLauncher, ffxivSetup, standard]
 
     // MARK: Recognising a game
@@ -995,7 +1018,7 @@ enum GameRecommendations {
     static let rdr2AppID = 1174180, gta5EnhancedAppID = 3240220, ghostAppID = 2215430, godOfWarAppID = 1593500,
                horizonZeroDawnAppID = 1151640, darkSoulsRemasteredAppID = 570940, darkSoulsIIIAppID = 374320,
                projectZomboidAppID = 108600, counterStrike2AppID = 730, escapists2AppID = 641990,
-               slayTheSpire2AppID = 2868840, garrysModAppID = 4000
+               slayTheSpire2AppID = 2868840, garrysModAppID = 4000, groundedAppID = 962130
     static let falloutNewVegasAppID = 22380, fallout3AppIDs: Set<Int> = [22300, 22370]   // Fallout 3, its GOTY Edition
     /// Black Ops II's campaign, Zombies and multiplayer.
     static let blackOps2AppIDs: Set<Int> = [202970, 212910, 202990]
@@ -1033,6 +1056,7 @@ enum GameRecommendations {
             if steamAppID == escapists2AppID || installFolder == "the escapists 2" { return escapists2 }
             if steamAppID == slayTheSpire2AppID || installFolder == "slay the spire 2" { return slayTheSpire2 }
             if steamAppID == garrysModAppID || installFolder == "garrysmod" { return garrysMod }
+            if steamAppID == groundedAppID || installFolder == "grounded" { return grounded }
             return nil
         }
         // A program, wherever it was installed: only the game's own programs, so a
@@ -1073,6 +1097,8 @@ enum GameRecommendations {
             return slayTheSpire2
         case "gmod.exe":
             return garrysMod
+        case "maine-win64-shipping.exe":
+            return grounded
         case "launcher.exe" where Array(parts.dropLast().suffix(2)) == ["rockstar games", "launcher"]:
             // The Rockstar Games Launcher outside Steam; another publisher's Launcher.exe gets nothing here.
             return rockstarLauncher

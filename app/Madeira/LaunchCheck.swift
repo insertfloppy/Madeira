@@ -371,6 +371,11 @@ enum KnownGames {
                   folders: ["fallout new vegas"], programs: ["falloutnv.exe"],
                   tests: [onIPhone17ProMax(build: 18)],
                   note: "Saves load with Older NVIDIA card (Direct3D 9), which Madeira turns on for it."),
+        // BlackOps.exe through Steam; multiplayer (42710, BlackOpsMP.exe) shares the folder and is untested.
+        KnownGame(id: "black-ops-1", title: "Call of Duty: Black Ops", appIDs: [42700],
+                  folders: [], programs: ["blackops.exe"],
+                  tests: [onIPhone17ProMax(build: 64)],
+                  note: "Through Steam, with Madeira's recommended settings. Multiplayer is untested."),
     ]
 
     /// The device test for a game: `windowsPath` is a program or a Steam game's install folder.

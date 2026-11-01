@@ -365,6 +365,7 @@ jobs:
           python3 tests/host/check-jit-pool-meter.py
           python3 tests/host/check-harmless-warnings.py
           python3 tests/host/check-install-registry.py
+          python3 tests/host/check-local-steam-identity.py
           python3 tests/host/check-dock-start-program.py
           python3 tests/host/check-d3d9-report-nvidia.py
           python3 tests/host/check-d3d9-older-nvidia.py

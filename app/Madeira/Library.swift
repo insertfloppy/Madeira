@@ -763,6 +763,12 @@ struct LibraryEntry: Codable, Identifiable {
             // folder) instead of the bridge's fixed one.
             setenv("MADEIRA_STEAM_APPID", String(steamAppID), 1)
             setenv("MADEIRA_STEAM_APPPATH", windowsPath, 1)
+        } else if steamAppID == nil, desktop != true,
+                  let game = DockGame.containing(windowsProgram: launchWindowsPath, in: MadeiraDock.games(drive: MadeiraDock.drive)) {
+            // A game added from a folder that Steam installed (a local entry for a program under
+            // steamapps/common/<game>): that game's own identity too, not the fixed Thumper one.
+            setenv("MADEIRA_STEAM_APPID", String(game.id), 1)
+            setenv("MADEIRA_STEAM_APPPATH", game.windowsInstallPath, 1)
         }
         // ml2310: a game from another store is not a Steam game. With the bridge's fixed Steam
         // identity its launcher took its Steam path and failed; env.MADEIRA_STORE_STEAM_IDENTITY=1

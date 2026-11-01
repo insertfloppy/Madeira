@@ -264,15 +264,17 @@ final class ExternalDrives: ObservableObject {
 
     /// Forgets a folder. Its files stay on the drive; the library entries that
     /// start programs on it (and its Steam games' entries) are removed.
-    @MainActor func remove(_ id: UUID) {
+    /// A folder that is not connected can always go: nothing can be using it (the
+    /// automatic cloud check at start-up used to block this, so Remove did nothing).
+    @MainActor func remove(_ id: UUID) throws {
         guard let folder = folders.first(where: { $0.id == id }) else { return }
-        guard wine_process_is_running() == 0, GameMover.shared.moving == nil,
-              !SteamOwnedLibrary.shared.hasStorageWork else {
+        guard mounted[id] == nil || (wine_process_is_running() == 0 && GameMover.shared.moving == nil &&
+              !SteamOwnedLibrary.shared.hasStorageWork) else {
             LogStore.shared.log("[external] drive kept while a game, download or cloud operation uses storage")
-            return
+            throw LibraryError.message("\(folder.name) is in use by a game, a download or a cloud save check. Try again when it has finished.")
         }
         do { try save(folders.filter { $0.id != id }) }
-        catch { LogStore.shared.log("[external] drive registration could not be removed"); return }
+        catch { LogStore.shared.log("[external] drive registration could not be removed"); throw error }
         let prefix = "External/\(folder.name)/"
         let library = LibraryModel.shared
         for entry in library.entries where entry.relativePath.hasPrefix(prefix) {
@@ -463,7 +465,9 @@ struct ExternalDrivesSection: View {
         }
         .confirmationDialog("Remove \(removing?.name ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
                             titleVisibility: .visible, presenting: removing) { folder in
-            Button("Remove", role: .destructive) { drives.remove(folder.id) }
+            Button("Remove", role: .destructive) {
+                do { try drives.remove(folder.id); error = nil } catch { self.error = error.localizedDescription }
+            }
         } message: { _ in
             Text("Madeira forgets this drive and removes its games from the library. The files on the drive are kept.")
         }

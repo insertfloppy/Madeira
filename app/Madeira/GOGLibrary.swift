@@ -401,6 +401,7 @@ struct GOGInstalledGame: Codable, Sendable {
                 let data = try await api.depotManifest(depot.manifest)
                 files += try await Task.detached(priority: .userInitiated) { try GOGDepot.files(data, product: depot.productID) }.value
             }
+            files = GOGDepot.unique(files)
             let record = installed[id]
             let folder = record?.folder ?? (Self.installRoot + "/" + GOGLibrary.safeName(manifest.installDirectory))
             try? FileManager.default.createDirectory(at: Self.journalURL(id).deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -502,6 +503,52 @@ struct GOGInstalledGame: Codable, Sendable {
         guard !lines.isEmpty else { return nil }
         GOGLog.event("[gog-setup] this start runs installers id=\(product) count=\(lines.filter { $0.hasPrefix("echo [gog-setup]") }.count)")
         return lines.joined(separator: "\r\n")
+    }
+
+    // MARK: Install script
+
+    /// The installed GOG game whose folder holds `entry`'s program: the entry's own
+    /// game, or one whose folder an added program sits in (System\witcher.exe).
+    func installedGame(for entry: LibraryEntry) -> GOGInstalledGame? {
+        if let product = entry.gogProductID, let record = installed[product] { return record }
+        let path = entry.relativePath.lowercased()
+        return installed.values.first { path.hasPrefix($0.folder.lowercased() + "/") }
+    }
+
+    /// Called right before a library game starts, while no session runs: the registry
+    /// values of the game's install scripts (GOGInstallScript), which GOG Galaxy's
+    /// script interpreter would have written. A value the prefix has stays as it is,
+    /// except one made from the game's folder, which follows the folder.
+    func writeInstallScriptRegistry(for entry: LibraryEntry) {
+        guard entry.desktop != true, let record = installedGame(for: entry),
+              wineserver_is_running() == 0, wine_process_is_running() == 0 else { return }
+        let folderURL = Self.drive.appendingPathComponent(record.folder, isDirectory: true)
+        let folder = "C:\\" + record.folder.replacingOccurrences(of: "/", with: "\\")
+        var values: [SteamInstallValue] = []
+        for file in GOGInstallScript.scripts(in: folderURL) {
+            guard let data = try? Data(contentsOf: file), let script = GOGInstallScript.parse(data) else {
+                GOGLog.event("[gog-script] \(file.lastPathComponent) could not be read")
+                continue
+            }
+            let plan = script.plan(folder: folder, language: record.language)
+            for note in plan.notes { GOGLog.event("[gog-script] \(note)") }
+            values += plan.values.map { value in
+                let data: SteamInstallValue.Content
+                switch value.data {
+                case .string(let text): data = .string(text)
+                case .dword(let number): data = .dword(number)
+                }
+                return SteamInstallValue(hive: value.root == .machine ? .machine : .user, key: value.key,
+                                         name: value.name, data: data, followsInstall: value.followsInstall)
+            }
+        }
+        guard !values.isEmpty else { return }
+        do {
+            let changed = try SteamInstallRegistry.write(values, prefix: Self.drive.deletingLastPathComponent())
+            GOGLog.event("[gog-script] id=\(record.productID) registry values=\(values.count) written=\(changed)")
+        } catch {
+            GOGLog.event("[gog-script] id=\(record.productID) registry not written: \(error.localizedDescription)")
+        }
     }
 
     // MARK: Play task

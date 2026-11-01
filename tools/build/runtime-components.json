@@ -6,6 +6,7 @@
     "inputs": [
       "tools/build/runtime-components.json",
       "build/madeira-dock/**",
+      "build/dock-patches/**",
       "tools/build/setup-llvm-mingw.sh",
       "tools/build/build-runtime-component.sh"
     ],

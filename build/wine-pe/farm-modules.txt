@@ -10,3 +10,6 @@ windows.applicationmodel windows.devices.enumeration windows.gaming.ui.gamebar w
 mspatcha odbccp32
 # sapi, msttsengine: SAPI 5 (SpVoice, SpDataKey ...) and its TTS engine; the prefix registers them under system32\Speech, which the app links to these files. Grounded's narration (System.Speech) needs them.
 sapi msttsengine
+# msvproc: the prefix registers CLSID_VideoProcessorMFT at system32\msvproc.dll (a wrapper around winegstreamer's
+# wg_video_processor); Media Foundation's source reader needs it for RGB video (The Planet Crafter's loading video).
+msvproc

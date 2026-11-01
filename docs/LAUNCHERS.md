@@ -100,10 +100,12 @@ Each launcher has its own library section, like Steam's and GOG's
   Final Fantasy XIV's game. Add picks the folder's one program (helpers aside), or
   the one named like the folder; otherwise it asks for + instead.
 
-Final Fantasy XIV's launcher is in the same section, for installing and updating the
-game only: its window is Internet Explorer's engine, so its lists are the standard
+Final Fantasy XIV has its own library section (docs/FFXIV_PATCHING.md): Madeira
+installs, patches and signs in the game itself (docs/SQUARE_ENIX_SIGNIN.md). Square
+Enix's launcher is listed here only with `env.MADEIRA_FFXIV = 0`, for installing and
+updating the game the old way: its window is Internet Explorer's engine, so its lists are the standard
 line in the Wine desktop with services first (its InstallShield installer stayed
-black when started directly on build 48). The game signs in through Madeira (docs/FFXIV.md).
+black when started directly on build 48). The game signs in through Madeira (docs/SQUARE_ENIX_SIGNIN.md).
 
 ## Ubisoft repairs
 

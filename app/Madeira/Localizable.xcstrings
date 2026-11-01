@@ -5815,40 +5815,6 @@
         }
       }
     },
-    "Final Fantasy XIV": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Final Fantasy XIV"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Final Fantasy XIV"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Final Fantasy XIV"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Final Fantasy XIV"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Final Fantasy XIV"
-          }
-        }
-      }
-    },
     "Find a game": {
       "localizations": {
         "de": {
@@ -10167,40 +10133,6 @@
         }
       }
     },
-    "Madeira signs in to Square Enix the way the official launcher does and starts the game. Updates still install through the Final Fantasy XIV launcher (Settings › PC game launchers). Steam accounts are not supported yet.": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Madeira meldet sich bei Square Enix so an wie der offizielle Launcher und startet das Spiel. Updates werden weiterhin über den Final Fantasy XIV-Launcher installiert (Einstellungen › PC-Spiele-Launcher). Steam-Konten werden noch nicht unterstützt."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Madeira inicia sesión en Square Enix como lo hace el launcher oficial e inicia el juego. Las actualizaciones se siguen instalando con el launcher de Final Fantasy XIV (Ajustes › Launchers de juegos de PC). Las cuentas de Steam aún no son compatibles."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Madeira는 공식 런처와 같은 방식으로 Square Enix에 로그인하고 게임을 시작합니다. 업데이트는 여전히 Final Fantasy XIV 런처(설정 › PC 게임 런처)로 설치됩니다. Steam 계정은 아직 지원하지 않습니다."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "O Madeira entra na Square Enix como o launcher oficial faz e inicia o jogo. As atualizações continuam sendo instaladas pelo launcher de Final Fantasy XIV (Ajustes › Launchers de jogos de PC). Contas Steam ainda não são suportadas."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Madeira входит в Square Enix так же, как официальный лаунчер, и запускает игру. Обновления по-прежнему ставятся через лаунчер Final Fantasy XIV (Настройки › Лаунчеры игр для ПК). Учётные записи Steam пока не поддерживаются."
-          }
-        }
-      }
-    },
     "Madeira signs in with an API key you make on itch.io, kept in this device's Keychain for this device only. Signing out removes it; installed games stay and still play. You can also delete the key on itch.io at any time.": {
       "localizations": {
         "de": {
@@ -12377,40 +12309,6 @@
         }
       }
     },
-    "One-time password (if you use one)": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Einmalpasswort (falls du eins nutzt)"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Contraseña de un solo uso (si usas una)"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "일회용 비밀번호(사용하는 경우)"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Senha de uso único (se você usa)"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Одноразовый пароль (если используете)"
-          }
-        }
-      }
-    },
     "Only do this if the game's files are really there. If files are missing, the game may crash; Steam will download them again at its next update.": {
       "localizations": {
         "de": {
@@ -14243,40 +14141,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Перезагрузить"
-          }
-        }
-      }
-    },
-    "Remember password on this device": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Passwort auf diesem Gerät merken"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recordar la contraseña en este dispositivo"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이 기기에 비밀번호 기억"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lembrar a senha neste dispositivo"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Запомнить пароль на этом устройстве"
           }
         }
       }

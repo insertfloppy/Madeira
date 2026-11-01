@@ -137,6 +137,16 @@ mkdir -p "$B/dlls/stdole2.tlb"
 # stub). A module is changed only when every DLL it delay-loads is in the farm
 # or built in this run; its Makefile.in is restored when the script ends.
 # UNDELAY=0 keeps the delay imports.
+#
+# The C runtimes keep theirs. ucrtbase and msvcrt delay-load advapi32 and
+# user32, and nearly every builtin imports one of them. As plain imports they
+# close a cycle (ucrtbase -> user32 -> winmm -> msacm32 -> ucrtbase), and the
+# loader then runs msacm32's DllMain before ucrtbase's: msacm32 calls into a
+# CRT with no locale yet and faults in msvcrt_get_thread_data. Every 64-bit
+# process stops there, in the xtajit64 dependency attach (dockhost.exe, so no
+# Steam game starts), when the whole farm is rebuilt from the pins. The
+# committed farm's ucrtbase.dll has always kept them delayed.
+KEEP_DELAYED=" ucrtbase msvcrt "
 undelayed=()
 backup="$(mktemp -d)"
 restore_makefiles() {
@@ -150,6 +160,7 @@ if [ "${UNDELAY:-1}" != 0 ]; then
     for m in "$@"; do
         mk="$R/wine/dlls/$m/Makefile.in"
         [ -f "$mk" ] || continue
+        case "$KEEP_DELAYED" in *" $m "*) continue ;; esac
         delayed="$(sed -n 's/^DELAYIMPORTS[[:space:]]*=[[:space:]]*//p' "$mk")"
         [ -n "$delayed" ] && grep -q '^IMPORTS' "$mk" || continue
         ok=1

@@ -1130,6 +1130,14 @@ static DECLSPEC_NORETURN void pthread_exit_wrapper( int status )
                        "exiting cleanly (n=%lu) rev=ml558\n", noteb_n);
         pthread_exit( UIntToPtr(status) );
     }
+#ifdef WINE_IOS
+    {
+        /* ds3-coop [child-suspend]: a thread killed while parked (or before it
+         * parked) gives back its park slot */
+        extern void ios_park_thread_exit( DWORD tid );
+        ios_park_thread_exit( HandleToULong( NtCurrentTeb()->ClientId.UniqueThread ));
+    }
+#endif
     close( ntdll_get_thread_data()->alert_fd );
     close( ntdll_get_thread_data()->wait_fd[0] );
     close( ntdll_get_thread_data()->wait_fd[1] );
@@ -2537,6 +2545,27 @@ static NTSTATUS ios_park_start( CONTEXT *context )
     dprintf( 2, "[child-suspend] tid=%04x resumed: pc=%p x0=%p%s\n", (int)tid, (void *)context->Pc,
              (void *)context->X0, (context->Pc != pc || context->X0 != x0) ? " (context changed while parked)" : "" );
     return STATUS_SUCCESS;
+}
+
+/* pthread_exit_wrapper: a thread that ends while it holds a slot (killed while
+ * parked, or before it parked) frees it, so the slot neither stays in use nor
+ * answers for a later thread with the same id */
+void ios_park_thread_exit( DWORD tid )
+{
+    struct ios_park *park;
+
+    if (!ios_park_used) return;
+    pthread_mutex_lock( &ios_park_mutex );
+    if ((park = ios_park_find( tid )))
+    {
+        dprintf( 2, "[child-suspend] tid=%04x ended while %s; its slot is freed\n",
+                 (int)tid, park->state == IOS_PARK_PARKED ? "parked" : "waiting to park" );
+        park->state = 0;
+        park->tid = 0;
+        ios_park_used--;
+        pthread_cond_broadcast( &ios_park_cond );
+    }
+    pthread_mutex_unlock( &ios_park_mutex );
 }
 
 /* the parked entry of the thread behind handle, returned locked; NULL unlocked */

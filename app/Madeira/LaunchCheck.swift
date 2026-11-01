@@ -387,6 +387,11 @@ enum KnownGames {
                   folders: ["batman arkham city goty"], programs: ["batmanac.exe"],
                   tests: [onIPhone17ProMax(build: 63)],
                   note: "With Older NVIDIA card (Direct3D 9), which Madeira turns on for it. Without it the game opens its own launcher instead and the session ends."),
+        // BlackOps.exe through Steam; multiplayer (42710, BlackOpsMP.exe) shares the folder and is untested.
+        KnownGame(id: "black-ops-1", title: "Call of Duty: Black Ops", appIDs: [42700],
+                  folders: [], programs: ["blackops.exe"],
+                  tests: [onIPhone17ProMax(build: 64)],
+                  note: "Through Steam, with Madeira's recommended settings. Multiplayer is untested."),
     ]
 
     /// The device test for a game: `windowsPath` is a program or a Steam game's install folder.

@@ -126,11 +126,11 @@ that shows web pages (imports mshtml or ieframe) before Wine Gecko is downloaded
 (an info line with Get Wine Gecko), a Steam minimum
 memory above the device's (from the public store, kept 30 days), and less than
 2 GB free. A game device-tested on Madeira (`KnownGames` in `LaunchCheck.swift`:
-Counter-Strike 2, The Escapists 2, Terraria, Stardew Valley, Slay the Spire 2, Modern Warfare 2 (2009) campaign, Project Zomboid, Megabonk, Fallout: New Vegas, Batman: Arkham City) gets
+Counter-Strike 2, The Escapists 2, Terraria, Stardew Valley, Slay the Spire 2, Modern Warfare 2 (2009) campaign, Project Zomboid, Megabonk, Fallout: New Vegas, Batman: Arkham City, Black Ops through Steam) gets
 a green "Tested: runs on Madeira" line naming the device, iOS and build it was
 tested on (each game keeps a list of tests, so more devices can be added; a
 device with less memory than every tested one is told so), and a
-**Tested** pill in the library; Counter-Strike 2, The Escapists 2, Slay the Spire 2 and Project Zomboid also have
+**Tested** pill in the library; Counter-Strike 2, The Escapists 2, Slay the Spire 2, Project Zomboid and Black Ops also have
 recommended settings (`GameRecommendations.swift`), so they get their tested
 config on first sight. With nothing found it shows one green line. Play stays available: a
 red line asks "Play anyway?" once per game and set of problems. Each read is

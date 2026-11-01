@@ -65,11 +65,11 @@ for m in re.finditer(r'static let (\w+) = GameRecommendation\(\n\s*id: "([^"]+)"
     lines = [line[len(indent):] if line.startswith(indent) else line for line in body.split('\n')]
     presets[ident] = dict(name=name, title=title, version=int(version), lines=lines, switches=' '.join((switches or '').split()))
 assert set(presets) == {'rdr2-steam', 'rdr2-other', 'gta5e-steam', 'gta5e-other', 'ghost-of-tsushima', 'god-of-war',
-                        'horizon-zero-dawn', 'dark-souls-remastered', 'dark-souls-iii', 'fallout-new-vegas', 'fallout-3', 'black-ops-2', 'project-zomboid', 'project-zomboid-b41',
+                        'horizon-zero-dawn', 'dark-souls-remastered', 'dark-souls-iii', 'fallout-new-vegas', 'fallout-3', 'black-ops-1', 'black-ops-2', 'project-zomboid', 'project-zomboid-b41',
                         'counter-strike-2', 'escapists-2', 'slay-the-spire-2', 'garrys-mod', 'rockstar-launcher', 'rockstar-launcher-setup', 'ubisoft-connect', 'ubisoft-connect-setup', 'battle-net',
                         'battle-net-setup', 'ffxiv-launcher', 'ffxiv-setup', 'standard'}, sorted(presets)
 assert ('static let all = [rdr2Steam, rdr2Other, gta5EnhancedSteam, gta5EnhancedOther, ghostOfTsushima, godOfWar, horizonZeroDawn,\n'
-        '                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, projectZomboid, projectZomboidB41,\n'
+        '                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps1, blackOps2, projectZomboid, projectZomboidB41,\n'
         '                      counterStrike2, escapists2, slayTheSpire2, garrysMod, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,\n'
         '                      ffxivLauncher, ffxivSetup, standard]') in lists_src
 
@@ -87,7 +87,7 @@ for ident, p in presets.items():
     # was tested through Madeira Dock with the standard list's lines.
     # The publishers' launchers' Chromium clients take no release delay (their allocator
     # reserves, releases and reserves again), and their installers the standard line only.
-    if ident in ('standard', 'fallout-new-vegas', 'fallout-3', 'black-ops-2', 'project-zomboid', 'project-zomboid-b41', 'counter-strike-2', 'escapists-2', 'slay-the-spire-2',
+    if ident in ('standard', 'fallout-new-vegas', 'fallout-3', 'black-ops-1', 'black-ops-2', 'project-zomboid', 'project-zomboid-b41', 'counter-strike-2', 'escapists-2', 'slay-the-spire-2',
                  'garrys-mod', 'rockstar-launcher-setup',
                  'ubisoft-connect', 'ubisoft-connect-setup', 'battle-net', 'battle-net-setup', 'ffxiv-launcher', 'ffxiv-setup'):
         assert not set(FORK_DEFAULTS) & set(p['lines']), (ident, "the list has none of madeira-bcd's defaults")
@@ -206,6 +206,11 @@ assert bo2['tested'] == ['env.MADEIRA_AUDIO_LEAD_MS = 150', 'env.MADEIRA_EC_HOOK
     and bo2['version'] == 1, bo2
 assert not any(line.startswith('env.MADEIRA_AUDIO_LEAD_MS')
                for p in presets.values() if p is not bo2 for line in p['lines']), 'the 150 ms audio lead is Black Ops II\'s only'
+# Black Ops (owner's test, build 64, 2026-11-01): the standard list it ran with, Direct3D 9
+# naming a GeForce 7900 GS (the card picked for it) and 1280x720.
+bo1 = presets['black-ops-1']
+assert bo1['tested'] == ['env.MADEIRA_EC_HOOK_TRACE = 0'] and bo1['switches'] == 'olderNvidia: true, resolution: "1280x720"' \
+    and bo1['version'] == 1, bo1
 assert 'if size != GameRecommendation.screen720 { entry.resolution = size }\n            else if let lines720 = ResolutionChoices.screen720Value { entry.resolution = lines720 }' in apply_src
 gta = presets['gta5e-steam']
 assert 'env.MADEIRA_CHILD_ARGS = PlayGTAV.exe -nobattleye' in gta['lines']
@@ -569,7 +574,10 @@ check(id(#"C:\Games\PZ\ProjectZomboid64.exe"#, files: [#"C:\Games\PZ\ProjectZomb
       "the current build by its program")
 check(id(steam + #"\Call of Duty Black Ops II\t6zm.exe"#) == "black-ops-2" && id(#"D:\BO2\T6SP.EXE"#) == "black-ops-2",
       "Black Ops II by its programs")
-check(id(steam + #"\Call of Duty Black Ops"#, 42700) == "none", "the first Black Ops is another game")
+check(id(steam + #"\Call of Duty Black Ops"#, 42700) == "black-ops-1" && id(steam + #"\Call of Duty Black Ops"#) == "black-ops-1"
+      && id(steam + #"\Call of Duty Black Ops\BlackOps.exe"#) == "black-ops-1", "the first Black Ops by App ID, folder and program")
+check(id(steam + #"\Call of Duty Black Ops"#, 42710) == "none" && id(steam + #"\Call of Duty Black Ops\BlackOpsMP.exe"#) == "none",
+      "the first Black Ops' multiplayer shares the folder and has no list")
 check(id(steam + #"\Counter-Strike Global Offensive"#, 730) == "counter-strike-2" && id(steam + #"\Counter-Strike Global Offensive"#) == "counter-strike-2"
       && id(steam + #"\Counter-Strike Global Offensive\game\bin\win64\cs2.exe"#) == "counter-strike-2", "Counter-Strike 2 by App ID, folder and program")
 check(id(steam + #"\The Escapists 2"#, 641990) == "escapists-2" && id(steam + #"\The Escapists 2"#) == "escapists-2"

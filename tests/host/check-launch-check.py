@@ -45,7 +45,7 @@ check('KnownGames.find(windowsPath: entry.windowsPath, steamAppID: entry.steamAp
       'the library shows a Tested pill')
 check('input.tested = KnownGames.find(' in view, 'Will it run? names a device test')
 known = (app / 'GameRecommendations.swift').read_text(encoding='utf-8')
-for ident in ('counter-strike-2', 'escapists-2', 'fallout-new-vegas'):
+for ident in ('counter-strike-2', 'escapists-2', 'fallout-new-vegas', 'black-ops-1'):
     check(f'id: "{ident}"' in known, f'tested game {ident} has recommended settings')
 
 harness = r'''
@@ -141,6 +141,11 @@ expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\Call of Duty Modern 
 expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\Call of Duty Modern Warfare 2\iw4mp.exe"#, steamAppID: 10190) == nil, "MW2 multiplayer is not marked tested")
 expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\GarrysMod\bin\win64\gmod.exe"#, steamAppID: nil)?.id == "garrys-mod"
        && KnownGames.find(windowsPath: "", steamAppID: 4000)?.tests.first?.build == 60, "Garry's Mod by program and App ID, build 60")
+expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\Call of Duty Black Ops\BlackOps.exe"#, steamAppID: nil)?.id == "black-ops-1"
+       && KnownGames.find(windowsPath: "", steamAppID: 42700)?.tests.first?.build == 64, "Black Ops by program and App ID, build 64")
+expect(KnownGames.find(windowsPath: #"C:\x\steamapps\common\Call of Duty Black Ops\BlackOpsMP.exe"#, steamAppID: 42710) == nil
+       && KnownGames.find(windowsPath: #"C:\x\steamapps\common\Call of Duty Black Ops"#, steamAppID: nil) == nil,
+       "Black Ops multiplayer is not marked tested")
 expect(KnownGames.find(windowsPath: #"C:\Games\Foo\foo.exe"#, steamAppID: 620) == nil, "other games are not known")
 expect(Set(KnownGames.all.map(\.id)).count == KnownGames.all.count, "known game ids are unique")
 input = base; input.tested = KnownGames.all[0]

@@ -337,7 +337,7 @@ enum MadeiraDock {
         "launch-config-wait", "launch-config-gave-up", "launch-session-wait", "launch-session-gave-up",
         "launch-session-kick-slot", "launch-session-kick",
         "ceg-request", "ceg-request-result", "ceg-request-busy", "ceg-server-result", "ceg-job-result",
-        "ceg-finished-jobs", "ceg-result", "ceg-disabled", "ceg-unsupported-client",
+        "ceg-finished-jobs", "ceg-result", "ceg-already-prepared", "ceg-disabled", "ceg-unsupported-client",
         "ceg-scm", "ceg-scm-started", "ceg-scm-error", "ceg-service-registered", "ceg-service-install", "ceg-service-stop", "ceg-scm-stopped",
         "game-scm", "game-scm-timeout", "launch-keep-alive",
         "shutdown-begin", "shutdown-complete", "probe-result"]

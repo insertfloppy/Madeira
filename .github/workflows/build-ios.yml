@@ -372,6 +372,7 @@ jobs:
           python3 tests/host/check-launch-check.py
           python3 tests/host/check-wine-gecko.py
           python3 tests/host/check-background-pause.py
+          python3 tests/host/check-d3d9-index-range.py
           python3 tests/host/check-x18-signed-loads.py
           python3 tests/host/check-exe-phys.py
           python3 tests/host/check-game-recommendations.py --require-swift

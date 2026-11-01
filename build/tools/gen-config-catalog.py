@@ -850,6 +850,17 @@ OVERLAY = {
                         "sending GPU work iOS refuses in the background, so the game carries on where it was when "
                         "you come back. [wmt-bg] lines in the log. 0: the game keeps submitting, as before. Read once "
                         "per session."},
+    # DXMT's Direct3D 9 index buffers read it (dxmt, build/dxmt-patches/0005-d3d9-index-range-per-draw.patch).
+    "env.MADEIRA_D3D9_INDEX_RANGE": {"category": "Direct3D 9/10/11 (DXMT)",
+                "title": "Direct3D 9: upload only the index bytes a draw reads",
+                "kind": "bool", "default": "1", "sources": ["build/dxmt-patches/0005-d3d9-index-range-per-draw.patch"],
+                "note": "On by default. A 32-bit Direct3D 9 game writes its index buffers through a copy Madeira keeps; "
+                        "an indexed draw now copies only the indices it reads into the buffer the GPU reads, instead of "
+                        "the whole buffer before every draw after a lock (the slowdown in engines that lock a little of "
+                        "one big index buffer before each draw, such as Call of Duty's). A lock without NOOVERWRITE still "
+                        "gives the next draw a fresh buffer, so draws already recorded keep what they read. "
+                        "[d3d9-index-range] lines in the log say how much was copied. 0: the whole-buffer copy, as before. "
+                        "Read once per session."},
     # madeira-bcd: winemetal reads it (dxmt, build/dxmt-patches/0002-framegen-d3d12-pacing.patch; Tomba247's RDR2 work).
     "env.MADEIRA_FRAMEGEN_STALL_MS": {"category": "Direct3D 9/10/11 (DXMT)", "title": "Frame generation: stall threshold (ms)",
                 "kind": "int", "default": "125", "sources": ["build/dxmt-patches/0002-framegen-d3d12-pacing.patch"],

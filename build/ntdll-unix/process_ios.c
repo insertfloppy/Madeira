@@ -427,6 +427,7 @@ struct ios_child_args {
     int argc;
     struct pe_image_info pe_info;
     int slot;   /* ios_child_slots index, -1 = none */
+    int create_suspended;   /* the caller passed CREATE_SUSPENDED (see ios_child_create_suspended) */
 };
 
 
@@ -532,6 +533,16 @@ _Thread_local WORD ios_child_main_machine;
  * nothing happening; the thread entry below names the stage in one ERR. */
 _Thread_local const char *ios_child_boot_stage = "not started";
 
+/* ds3-coop [child-suspend]: the caller of CreateProcess asked for
+ * CREATE_SUSPENDED (PROCESS_CREATE_FLAGS_SUSPENDED in NtCreateUserProcess).
+ * kernelbase creates EVERY child with a suspended first thread and resumes it
+ * itself unless the caller asked for that, so the server's suspend count alone
+ * cannot tell the two apart.  Set by NtCreateUserProcess on the parent thread
+ * for spawn_process (ios_spawn_create_suspended), carried in ios_child_args and
+ * published on the child's main thread for server_init_process_done. */
+_Thread_local int ios_child_create_suspended;
+static _Thread_local int ios_spawn_create_suspended;
+
 static void *ios_child_thread_entry( void *arg )
 {
     struct ios_child_args *args = arg;
@@ -542,6 +553,7 @@ static void *ios_child_thread_entry( void *arg )
      * 32-bit furniture, and wow64.dll faults on the PEB32 nobody built. */
     ios_child_main_machine = (args->pe_info.image_flags & IMAGE_FLAGS_ComPlusNativeReady)
                              ? native_machine : args->pe_info.machine;
+    ios_child_create_suspended = args->create_suspended;
 
     /* Use dprintf for early logging — ERR requires TEB which isn't set up yet */
     dprintf(STDERR_FILENO, "[Wine child thread] ENTRY: fd=%d, argc=%d, exe=%s\n",
@@ -654,6 +666,7 @@ static NTSTATUS spawn_process( const RTL_USER_PROCESS_PARAMETERS *params, int so
     args->argc = argc;
     args->pe_info = *pe_info;
     args->slot = ios_child_slot_take( &params->ImagePathName );
+    args->create_suspended = ios_spawn_create_suspended;
 
     if (winedebug) putenv( winedebug );
 
@@ -2381,6 +2394,9 @@ NTSTATUS WINAPI NtCreateUserProcess( HANDLE *process_handle_ptr, HANDLE *thread_
 
     /* create the child process */
 
+#ifdef WINE_IOS
+    ios_spawn_create_suspended = !!(process_flags & PROCESS_CREATE_FLAGS_SUSPENDED);
+#endif
     if ((status = spawn_process( params, socketfd[0], unixdir, winedebug, &pe_info ))) goto done;
 
     close( socketfd[0] );

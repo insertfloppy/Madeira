@@ -4036,7 +4036,7 @@ struct LibraryDetail: View {
                 TextField("Launch arguments", text: $entry.arguments.plainLaunchArguments, axis: .vertical)
                     .font(.body.monospaced()).lineLimit(1...4)
                     .autocorrectionDisabled().textInputAutocapitalization(.never).smartPunctuationOff()
-                LaunchFlagChips(arguments: $entry.arguments)
+                LaunchFlagChips(arguments: $entry.arguments, program: entry.relativePath)
                 // What the next start runs (ml1163: in the Wine desktop, a batch file or
                 // the services batch, what starts the program).
                 Text(entry.commandPreview)
@@ -4682,8 +4682,27 @@ struct ControllerModeChoice: View {
 /// Game details › Launch arguments: one chip per common flag, highlighted when
 /// the arguments contain it; a tap adds or removes it. -dx9 to -dx12 exclude each
 /// other, as do -windowed and -fullscreen. Quoted arguments are kept whole.
+/// For Battle.net's launcher a second row names each Blizzard game: a tap sets
+/// --exec="launch <code>" (one at a time), so the entry opens straight into that game.
 struct LaunchFlagChips: View {
     @Binding var arguments: String
+    var program: String = ""
+
+    /// Battle.net's programs (relative path's last part), which take --exec="launch <code>".
+    static func isBattleNet(_ program: String) -> Bool {
+        let name = program.split(separator: "/").last.map { $0.lowercased() } ?? ""
+        return name == "battle.net launcher.exe" || name == "battle.net.exe"
+    }
+    /// The Blizzard games by name, with their launch switch.
+    static let blizzardChips: [(name: String, flag: String)] = LauncherID.blizzardCodes
+        .sorted { $0.key < $1.key }.map { ($0.key, "--exec=\"launch \($0.value)\"") }
+    /// The arguments with `flag` as the one --exec switch, or without it when it is already there.
+    static func blizzardToggled(_ text: String, _ flag: String) -> String {
+        let on = contains(text, flag)
+        var parts = tokens(text).filter { !$0.lowercased().hasPrefix("--exec=") }
+        if !on { parts.append(flag) }
+        return parts.joined(separator: " ")
+    }
     static let flags = ["-dx11", "-dx12", "-dx10", "-dx9", "-windowed", "-fullscreen", "-nosplash"]
 
     /// The arguments split at unquoted spaces and tabs, quotes kept.
@@ -4726,6 +4745,20 @@ struct LaunchFlagChips: View {
                         .buttonStyle(.bordered).tint(on ? Color.accentColor : Color.gray)
                         .font(.caption.monospaced())
                         .accessibilityValue(on ? "On" : "Off")
+                }
+            }
+        }
+        if Self.isBattleNet(program) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Self.blizzardChips, id: \.flag) { chip in
+                        let on = Self.contains(arguments, chip.flag)
+                        Button(chip.name) { arguments = Self.blizzardToggled(arguments, chip.flag) }
+                            .buttonStyle(.bordered).tint(on ? Color.accentColor : Color.gray)
+                            .font(.caption)
+                            .accessibilityHint("Starts \(chip.name) through Battle.net")
+                            .accessibilityValue(on ? "On" : "Off")
+                    }
                 }
             }
         }

@@ -33,6 +33,10 @@ struct LaunchCheckSection: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(note.title).fontWeight(.semibold)
                         Text(note.detail).font(.caption).foregroundStyle(.secondary)
+                        if let link = note.link {
+                            Link("Read the report", destination: link)
+                                .font(.caption.weight(.semibold)).buttonStyle(.borderless)
+                        }
                         if let action = note.fix {
                             if (action == .getWineMono && mono.busy) || (action == .getWineGecko && gecko.busy) {
                                 ProgressView().controlSize(.small)
@@ -90,6 +94,7 @@ extension LaunchCheck {
         input.deviceName = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
         input.physicalMemory = ProcessInfo.processInfo.physicalMemory
         input.tested = KnownGames.find(windowsPath: entry.windowsPath, steamAppID: entry.steamAppID)
+        input.knownIssues = KnownIssues.find(windowsPath: entry.windowsPath, steamAppID: entry.steamAppID)
         input.freeBytes = (try? drive.deletingLastPathComponent()
             .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?.volumeAvailableCapacityForImportantUsage
         let arguments = entry.programArguments.lowercased()

@@ -217,10 +217,18 @@ assert 'env.MADEIRA_FASTSYNC_SEM = 1' in presets['gta5e-other']['lines']
 for ident in ('gta5e-steam', 'gta5e-other', 'rdr2-steam', 'rdr2-other', 'horizon-zero-dawn'):
     assert 'env.MADEIRA_LOCK_ORPHAN = stamped' in presets[ident]['lines'], ident
 # Version 3 of the Steam list (build 514): the VC++ setup's elevated engine is not started, as for RDR2.
-assert presets['gta5e-steam']['version'] == 3 and presets['gta5e-other']['version'] == 2, \
+assert presets['gta5e-steam']['version'] == 3 and presets['gta5e-other']['version'] == 3, \
     (presets['gta5e-steam']['version'], presets['gta5e-other']['version'])
 for ident in ('rdr2-steam', 'rdr2-other', 'gta5e-steam'):
     assert 'env.MADEIRA_SPAWN_BLOCK = RockstarErrorHandler;.be\\vc_redist' in presets[ident]['lines'], ident
+# Outside Steam version 3 (2026-11-01, an Epic copy): the launcher installer's VC++ setup blocked too, the Steam
+# list's pool and image lines, Social Club's browser without the GPU and DXCore, in the Wine desktop without services.
+gta_other = presets['gta5e-other']
+assert 'env.MADEIRA_SPAWN_BLOCK = RockstarErrorHandler;VCRed\\vc_redist;.be\\vc_redist' in gta_other['lines'], gta_other['lines']
+for line in ('pool-low = 1', 'env.MADEIRA_X64_IMAGE_NOCOPY = 1', 'env.WINEDLLOVERRIDES = dxcore=;video64=',
+             'env.MADEIRA_SC_CEF_FLAGS = --disable-gpu --disable-gpu-compositing'):
+    assert line in gta_other['lines'], line
+assert 'launchMode: "desktop"' in gta_other['switches'] and 'startServices' not in gta_other['switches'], gta_other['switches']
 assert 'resolution: "1280x720"' in presets['ghost-of-tsushima']['switches'] and 'avx: true' in presets['ghost-of-tsushima']['switches']
 assert 'resolution: "1920x1080"' in presets['god-of-war']['switches']
 # Horizon Zero Dawn, still being brought up: build 477's test list (register spaces other than 0,

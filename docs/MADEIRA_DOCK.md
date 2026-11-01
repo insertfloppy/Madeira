@@ -420,8 +420,13 @@ plan, the running program and, once the batch ended, how many succeeded.
 batch's program list and each game's choice.
 
 If the install record lists per-user custom executables (`CheckGuid`), Dock
-asks Valve's client to prepare them before launching. `env.MADEIRA_DOCK_CEG = 0`
-never asks. The preparation is Valve's; Dock does not touch the files.
+asks Valve's client to prepare them before launching. When the client answers
+that it started no job, because it already produced this account's executables
+(every launch after the first, until a repair or update replaces the files),
+the game starts at once (`ceg-already-prepared=1`, `ceg-result=1`); after a
+failed job such an answer still stops the launch with 49.
+`env.MADEIRA_DOCK_CEG = 0` never asks. The preparation is Valve's; Dock does
+not touch the files.
 
 ## Switches
 

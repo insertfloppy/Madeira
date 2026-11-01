@@ -1277,8 +1277,6 @@ struct ContentView: View {
         return false
     }
     @State private var devSheet: SettingsSheet?
-    /// Final Fantasy XIV's sign-in before its Play (FFXIVLaunch.swift).
-    @State private var ffxivSignIn: LibraryEntry?
     @StateObject private var logStore = LogStore.shared
     @StateObject private var jitCoordinator = JITCoordinator.shared
     @State private var jitStatus: JITStatus = .unknown
@@ -1349,9 +1347,6 @@ struct ContentView: View {
                 Button("Later", role: .cancel) { library.jitNotice = nil }
             } message: { Text(library.jitNotice ?? "") }
             .sheet(isPresented: $jitCoordinator.showSetup) { JITSetupView() }
-            .sheet(item: $ffxivSignIn) { entry in
-                FFXIVSignInView(entry: entry) { startLibraryEntry(entry, ffxivReady: true) }
-            }
             // A Steam game's saves may not be the latest (cloudClear).
             .alert(library.cloudNotice?.title ?? "Steam Cloud", isPresented: Binding(get: { library.cloudNotice != nil },
                                                                                      set: { if !$0 { library.cloudNotice = nil } })) {
@@ -2612,15 +2607,9 @@ struct ContentView: View {
     /// (EpicLibrary.launchArguments), for this launch only. An EA game first gets its
     /// licence, the EA app's environment and Madeira's stand-in for the EA app's local
     /// service (EALibrary.prepareLaunch); every other launch starts without that environment.
-    private func startLibraryEntry(_ entry: LibraryEntry, epicReady: Bool = false, ffxivReady: Bool = false, eaReady: Bool = false) {
+    private func startLibraryEntry(_ entry: LibraryEntry, epicReady: Bool = false, eaReady: Bool = false) {
         guard !EpicCloud.shared.isBusy else {
             library.error = "Wait for Epic Cloud save sync to finish before starting a game."
-            return
-        }
-        // Final Fantasy XIV gets its Square Enix session the same way (FFXIVLaunch.swift):
-        // the sign-in sheet starts the entry again once the session's arguments are set.
-        if !ffxivReady, FFXIVLaunch.installRoot(entry) != nil {
-            ffxivSignIn = entry
             return
         }
         if entry.eaOfferID == nil { EALibrary.clearEnvironment() }
@@ -2628,7 +2617,7 @@ struct ContentView: View {
             Task { @MainActor in
                 do {
                     try await EALibrary.shared.prepareLaunch(entry)
-                    startLibraryEntry(entry, epicReady: epicReady, ffxivReady: ffxivReady, eaReady: true)
+                    startLibraryEntry(entry, epicReady: epicReady, eaReady: true)
                 } catch {
                     LogStore.shared.log("[ea-launch] offer=\(offer) not started: \(error.localizedDescription)", level: .error)
                     library.error = "This EA game could not be prepared: \(error.localizedDescription)"
@@ -2641,7 +2630,7 @@ struct ContentView: View {
                 do {
                     let arguments = try await EpicLibrary.shared.launchArguments(appName: app)
                     LibraryEntry.setTransientArguments(arguments, for: entry.id)
-                    startLibraryEntry(entry, epicReady: true, ffxivReady: ffxivReady, eaReady: eaReady)
+                    startLibraryEntry(entry, epicReady: true, eaReady: eaReady)
                 } catch {
                     LogStore.shared.log("[epic-launch] app=\(app) not started: no sign-in arguments", level: .error)
                     library.error = "This Epic game could not get its sign-in from Epic: \(error.localizedDescription)"
@@ -2652,6 +2641,9 @@ struct ContentView: View {
         // Ubisoft games look for Uplay.exe and the client's registry values, whoever starts
         // them; nothing happens without Ubisoft Connect installed (LauncherSupport.swift).
         LauncherSupport.repairUbisoft()
+        // A GOG game's install-script registry values (The Witcher's launcher needs its
+        // InstallFolder), for its own entry or a program added from its folder.
+        GOGLibrary.shared.writeInstallScriptRegistry(for: entry)
         if entry.gogProductID != nil {
             // A GOG game: its redistributable installers still to run, before the game
             // (from the services batch), and GOG's game services while it runs.
@@ -3060,11 +3052,13 @@ struct ContentView: View {
             // d3d9 (shipped as d3d9-wined3d.dll) on wined3d's OpenGL renderer, i.e.
             // opengl32 and the winios WGL driver on Zink/MoltenVK (gl-backend = zink).
             // WineProcessBridge.m re-points the session's d3d9.dll links to it.
-            if let txt = MadeiraConfig.get("d3d9") {
+            // The game's own config wins, as it does for the native reader there.
+            let gameD3D9 = MadeiraConfig.gameValue("d3d9")
+            if let txt = gameD3D9 ?? MadeiraConfig.get("d3d9") {
                 let v = txt.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !v.isEmpty {
                     setenv("MADEIRA_D3D9", v, 1)
-                    logStore.log("D3D9 frontend: MADEIRA_D3D9=\(v) via madeira.cfg d3d9")
+                    logStore.log("D3D9 frontend: MADEIRA_D3D9=\(v) via \(gameD3D9 != nil ? "the game's config" : "madeira.cfg") d3d9")
                 }
             }
 

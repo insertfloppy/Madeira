@@ -148,15 +148,21 @@ enum GOGCodec {
 
 /// A depot's file list.
 enum GOGDepot {
-    /// The files of one depot (support files, GOG's installer scripts, are left out;
-    /// folders are made as files need them; links are not supported on drive_c).
+    /// The files of one depot (support files, GOG's installer scripts, are left out,
+    /// except the install script `goggame-<id>.script`, which goes to the folder's root
+    /// for its registry values (GOGInstallScript); folders are made as files need them;
+    /// links are not supported on drive_c).
     static func files(_ data: Data, product: String) throws -> [GOGFile] {
         let json = try GOGCodec.json(data, what: "depot")
         guard let items = (json["depot"] as? [String: Any])?["items"] as? [[String: Any]] else { throw GOGFormatError.parse("depot") }
         var files: [GOGFile] = []
         for item in items where item["type"] as? String == "DepotFile" {
-            guard let path = item["path"] as? String, let raw = item["chunks"] as? [[String: Any]] else { throw GOGFormatError.parse("file") }
-            if (item["flags"] as? [String] ?? []).contains("support") { continue }
+            guard var path = item["path"] as? String, let raw = item["chunks"] as? [[String: Any]] else { throw GOGFormatError.parse("file") }
+            if (item["flags"] as? [String] ?? []).contains("support") {
+                let name = path.replacingOccurrences(of: "\\", with: "/").split(separator: "/").last.map(String.init) ?? ""
+                guard GOGInstallScript.isScriptName(name) else { continue }
+                path = name
+            }
             let chunks = try raw.map { chunk -> GOGChunk in
                 guard let md5 = chunk["md5"] as? String, let compressed = chunk["compressedMd5"] as? String,
                       GOGAPI.isHash(md5), GOGAPI.isHash(compressed),
@@ -169,6 +175,13 @@ enum GOGDepot {
                                  md5: (item["md5"] as? String).map { $0.lowercased() }, sha256: (item["sha256"] as? String).map { $0.lowercased() }))
         }
         return files
+    }
+
+    /// The files of several depots, each path once (matched without case, as Windows
+    /// does): the first depot that names a path keeps it.
+    static func unique(_ files: [GOGFile]) -> [GOGFile] {
+        var seen = Set<String>()
+        return files.filter { seen.insert($0.path.lowercased()).inserted }
     }
 }
 
@@ -280,15 +293,21 @@ final class GOGDownloader: @unchecked Sendable {
             var state = GOGDownloadProgress(phase: .verifying)
             state.totalBytes = UInt64(toVerify.reduce(0) { $0 + $1.0.file.size })
             report(state)
+            var reported: UInt64 = 0
             for (item, url) in toVerify {
                 try Task.checkCancellation()
-                if try Self.matches(url, item.file, progress: { state.doneBytes += UInt64($0); report(state) }) {
+                // Progress at most every 32 MB: each report is a hop to the main actor.
+                if try Self.matches(url, item.file, progress: { bytes in
+                    state.doneBytes += UInt64(bytes)
+                    if state.doneBytes - reported >= 32 << 20 { reported = state.doneBytes; report(state) }
+                }) {
                     journal.record(item.file)
                     result.filesKept += 1
                 } else {
                     needed.append(item)
                 }
             }
+            if state.doneBytes != reported { report(state) }   // the last, under-32 MB stretch
         }
 
         // Free space: what grows, plus room for the largest temporary file.
@@ -386,15 +405,21 @@ final class GOGDownloader: @unchecked Sendable {
     }
 
     /// Whether the file on disk holds exactly these chunks.
+    /// Each read is drained in its own autorelease pool: FileHandle's reads are autoreleased,
+    /// and a repair reads the whole game without suspending, so without the pool every byte
+    /// stayed in memory until the end (a 15 GB game ended Madeira; build 63, 2026-11-01).
     static func matches(_ url: URL, _ file: GOGFile, progress: (Int) -> Void = { _ in }) throws -> Bool {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         for chunk in file.chunks {
-            let data = try handle.read(upToCount: chunk.size) ?? Data()
-            progress(data.count)
-            guard data.count == chunk.size, GOGCodec.md5(data) == chunk.md5 else { return false }
+            let same: Bool = try autoreleasepool {
+                let data = try handle.read(upToCount: chunk.size) ?? Data()
+                progress(data.count)
+                return data.count == chunk.size && GOGCodec.md5(data) == chunk.md5
+            }
+            guard same else { return false }
         }
-        return (try handle.read(upToCount: 1) ?? Data()).isEmpty
+        return try autoreleasepool { (try handle.read(upToCount: 1) ?? Data()).isEmpty }
     }
 
     /// One chunk from the CDN, trying the next address after a failure and asking for

@@ -39,6 +39,17 @@ struct DockGame: Identifiable, Equatable, Sendable, Codable {
     var windowsInstallPath: String {
         "C:\\" + (library + "/common/" + installDir).replacingOccurrences(of: "/", with: "\\")
     }
+
+    /// The installed Steam game whose install folder holds `program` (a Windows path), so a
+    /// game added from a folder inside a Steam library starts with its own Steam identity
+    /// instead of the bridge's fixed one (WineProcessBridge.m, "Steam game vars"). The
+    /// deepest install folder wins; case is ignored, as Windows does.
+    static func containing(windowsProgram program: String, in games: [DockGame]) -> DockGame? {
+        let path = program.replacingOccurrences(of: "/", with: "\\").lowercased()
+        return games
+            .filter { path.hasPrefix($0.windowsInstallPath.lowercased() + "\\") }
+            .max { $0.windowsInstallPath.count < $1.windowsInstallPath.count }
+    }
 }
 
 /// Madeira Dock: a small headless host (madeira-dock, built by
@@ -337,7 +348,7 @@ enum MadeiraDock {
         "launch-config-wait", "launch-config-gave-up", "launch-session-wait", "launch-session-gave-up",
         "launch-session-kick-slot", "launch-session-kick",
         "ceg-request", "ceg-request-result", "ceg-request-busy", "ceg-server-result", "ceg-job-result",
-        "ceg-finished-jobs", "ceg-result", "ceg-disabled", "ceg-unsupported-client",
+        "ceg-finished-jobs", "ceg-result", "ceg-already-prepared", "ceg-disabled", "ceg-unsupported-client",
         "ceg-scm", "ceg-scm-started", "ceg-scm-error", "ceg-service-registered", "ceg-service-install", "ceg-service-stop", "ceg-scm-stopped",
         "game-scm", "game-scm-timeout", "launch-keep-alive",
         "shutdown-begin", "shutdown-complete", "probe-result"]

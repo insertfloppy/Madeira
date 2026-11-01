@@ -322,9 +322,17 @@ enum GameRecommendations {
     /// GTA V Enhanced started from its own PlayGTAV.exe outside a Steam
     /// library (Rockstar Games Launcher or another store; build 451). Version 2:
     /// the same orphan-lock reaper mode as the Steam copy (its launcher and
-    /// Social Club too).
+    /// Social Club too). Version 3 (2026-11-01, an Epic copy on device, from an empty
+    /// Rockstar folder to the launcher's own window): it starts in the Wine desktop, where
+    /// the launcher installer's service starts on demand (sechost, env.MADEIRA_SCM_ON_DEMAND)
+    /// and Epic copies start under EpicGamesLauncher.exe (no services batch: it would bypass
+    /// that parent and write the Epic sign-in arguments to disk). The launcher installer's
+    /// VC++ redistributable is not started (the 32-bit setup crashed the session). Social
+    /// Club's libcef.dll runs without a JIT-pool copy (the Steam list's pool and image lines;
+    /// the pool ran out, error 17), its browser draws without the GPU and DXCore is off
+    /// (its GPU thread crashed in Wine's DXCore stub, error 17 again).
     static let gta5EnhancedOther = GameRecommendation(
-        id: "gta5e-other", title: "GTA V Enhanced (outside Steam)", version: 2,
+        id: "gta5e-other", title: "GTA V Enhanced (outside Steam)", version: 3,
         config: """
         # Madeira's recommended settings for GTA V Enhanced outside Steam (Rockstar Games Launcher or another store).
         # Reset to Recommended, at the bottom of the game's settings, brings them back.
@@ -345,13 +353,28 @@ enum GameRecommendations {
         env.FEX_VECTORTSOENABLED = 0
         env.MADEIRA_DEVICE_STATS = 1
         env.MADEIRA_EC_HOOK_TRACE = 0
+        pool-low = 1
+        pool-page-fit = 1
+        env.MADEIRA_X64_IMAGE_NOCOPY = 1
+        env.MADEIRA_POOL_LOW_IMAGES = 1
+        env.MADEIRA_POOL_RECYCLE_IMAGES = 1
+        env.MADEIRA_POOL_HEAD_RESERVE_MB = 128
+        env.MADEIRA_EXECREQ_LEAVE = 1
+        env.MADEIRA_PIN_GRAPHICS_DLLS = 1
+        env.MADEIRA_X64_GRAPHICS_ENTRY = 1
+        env.MADEIRA_WOW_MIN_FREE_GB = 2
+        env.DXMT_SMALL_RINGS = Launcher.exe;SocialClubHelper.exe
+        env.MADEIRA_SPAWN_BLOCK = RockstarErrorHandler;VCRed\\vc_redist;.be\\vc_redist
+        env.MADEIRA_SC_CEF_FLAGS = --disable-gpu --disable-gpu-compositing
+        env.WINEDLLOVERRIDES = dxcore=;video64=
         # madeira-bcd's defaults, which this list was tested with (upstream's differ).
         env.MADEIRA_FREE_DELAY_MS = 2000
         env.MADEIRA_CTX_CPU_AREA = 2
         env.MADEIRA_WAIT_CHILDREN = 1
         env.MADEIRA_JIT_DUMP = 0
         """,
-        avx: false, nvidia: true, wineVCRT: false, fastSync: true, resolution: "1280x720", display: "fit")
+        avx: false, nvidia: true, wineVCRT: false, fastSync: true, resolution: "1280x720", display: "fit",
+        launchMode: "desktop")
 
     /// Ghost of Tsushima (build 336: DualSense input, rumble, triggers and light work).
     /// Build 492 adds Horizon Zero Dawn's proven fix for typed buffer views that
@@ -599,6 +622,23 @@ enum GameRecommendations {
         """,
         olderNvidia: true)
 
+    /// Batman: Arkham City (GOTY, 200260; the first edition, 57400, has the same
+    /// BatmanAC.exe and is not tested). Tested on an iPhone 17 Pro Max, builds 60
+    /// and 63 (2026-10-31). Without "Older NVIDIA card (Direct3D 9)", BatmanAC.exe
+    /// read the adapter (Madeira's own card name), started its .NET launcher
+    /// BmLauncher.exe and exited, and the session ended with the launcher still
+    /// opening (log 17:20). With it, BatmanAC.exe started no launcher and drew its
+    /// first frame (log 22:26, build 63), and the game played. The config is the
+    /// standard list, which it ran with.
+    static let batmanArkhamCity = GameRecommendation(
+        id: "batman-arkham-city", title: "Batman: Arkham City", version: 1,
+        config: """
+        # Madeira's recommended settings for Batman: Arkham City.
+        # Reset to Recommended, at the bottom of the game's settings, brings them back.
+        env.MADEIRA_EC_HOOK_TRACE = 0
+        """,
+        olderNvidia: true)
+
     /// Call of Duty: Black Ops II, campaign (202970) and Zombies (212910), which
     /// share one folder; multiplayer (202990) lives there too. Build 26
     /// (2026-10-26): Zombies' sound crackled with the 60 ms default although the
@@ -613,6 +653,24 @@ enum GameRecommendations {
         env.MADEIRA_AUDIO_LEAD_MS = 150
         env.MADEIRA_EC_HOOK_TRACE = 0
         """)
+
+    /// Call of Duty: Black Ops (Steam 42700, BlackOps.exe; tested on an iPhone 17 Pro
+    /// Max, build 64, 2026-11-01). Steam's custom-executable (CEG) step needed the empty
+    /// system32\mui and syswow64\mui folders (the wine.inf system folders), and every
+    /// start after the first needed Madeira Dock to take Steam's "nothing left to
+    /// prepare" (dock patch 0004). The game drew at 2 to 20 FPS until DXMT stopped
+    /// copying its whole index buffer before each draw (dxmt patch 0005). It then ran
+    /// with the standard list's line, Direct3D 9 naming a GeForce 7900 GS with NVIDIA's
+    /// driver file (the card the owner picked for it) and 1280x720. Multiplayer (42710,
+    /// BlackOpsMP.exe) shares the folder and is untested, so it gets nothing here.
+    static let blackOps1 = GameRecommendation(
+        id: "black-ops-1", title: "Call of Duty: Black Ops", version: 1,
+        config: """
+        # Madeira's recommended settings for Call of Duty: Black Ops.
+        # Reset to Recommended, at the bottom of the game's settings, brings them back.
+        env.MADEIRA_EC_HOOK_TRACE = 0
+        """,
+        olderNvidia: true, resolution: "1280x720")
 
     /// Project Zomboid (Build 42, Steam). Its launcher starts Azul Zulu 25 with
     /// -XX:+UseZGC (ProjectZomboid64.json); ZGC reserves its heap 4-8 TB up and the
@@ -875,8 +933,17 @@ enum GameRecommendations {
     /// libcef.dll and its replacement could not start either, so the window went
     /// blank while Agent.exe kept running. MADEIRA_CHILD_ARGS gives Battle.net.exe
     /// (the Chromium browser process) one renderer and the GPU work in-process.
+    /// Version 4 (build 63 logs, 2026-11-01, StarCraft from Battle.net): the store
+    /// page's YouTube trailer started extra renderers (site isolation) and crashed
+    /// one; YouTube is now unresolvable, autoplay waits for a click and embeds share
+    /// the one renderer. The game page's JavaScript JIT kept FEX recompiling for a
+    /// minute until the 32-bit renderer ran out of memory: V8 keeps its interpreter
+    /// and WebAssembly but no optimizing tiers (--jitless left the page blank). With
+    /// that the home page drew at 60 FPS (Cameron). pool-split: the session's JIT
+    /// pool also holds the games Battle.net starts (StarCraft's ClientSdk.dll failed
+    /// to load in a 560 MB pool; split, 880 MB).
     static let battleNet = GameRecommendation(
-        id: "battle-net", title: "Battle.net", version: 3,
+        id: "battle-net", title: "Battle.net", version: 4,
         config: """
         # Madeira's recommended settings for Battle.net.
         # Reset to Recommended, at the bottom of the game's settings, brings them back.
@@ -890,7 +957,8 @@ enum GameRecommendations {
         env.DXMT_SMALL_RINGS = Battle.net Launcher.exe;Battle.net.exe;Agent.exe
         env.WINEDLLOVERRIDES = locationapi=d
         env.MADEIRA_EC_HOOK_TRACE = 0
-        env.MADEIRA_CHILD_ARGS = Battle.net.exe --renderer-process-limit=1 --in-process-gpu
+        env.MADEIRA_CHILD_ARGS = Battle.net.exe --renderer-process-limit=1 --in-process-gpu --js-flags="--no-opt --no-sparkplug" --disable-site-isolation-trials --autoplay-policy=user-gesture-required --host-resolver-rules="MAP youtube.com ~NOTFOUND, MAP *.youtube.com ~NOTFOUND, MAP youtube-nocookie.com ~NOTFOUND, MAP *.youtube-nocookie.com ~NOTFOUND, MAP *.googlevideo.com ~NOTFOUND, MAP *.ytimg.com ~NOTFOUND"
+        pool-split = 1
         """,
         fastSync: true, display: "fit", launchMode: "desktop", startServices: true)
 
@@ -906,8 +974,9 @@ enum GameRecommendations {
         launchMode: "desktop", startServices: true)
 
     /// Final Fantasy XIV's launcher (boot\ffxivboot.exe; LauncherSupport.swift), kept
-    /// for installing and updating the game: Madeira signs the game itself in
-    /// (FFXIVLaunch.swift). Its window is Internet Explorer's engine (mshtml), not
+    /// as a fallback for installing and updating the game (with env.MADEIRA_FFXIV = 0):
+    /// Madeira signs the game in (SquareEnixSignIn.swift) and installs and patches it
+    /// itself in the library's FINAL FANTASY XIV section (FFXIVLibrary.swift). Its window is Internet Explorer's engine (mshtml), not
     /// Chromium, so the standard line only, in the Wine desktop with Windows services
     /// first (version 2): its installer only ran that way on build 48. Not
     /// device-tested yet.
@@ -951,9 +1020,32 @@ enum GameRecommendations {
         env.MADEIRA_EC_HOOK_TRACE = 0
         """)
 
+    /// Grounded (Steam; tested on an iPhone 17 Pro Max, build 63, 2026-11-01).
+    /// Unreal's built-in browser (libcef.dll, 95 MB) needs CS2's pool lines. Loading
+    /// into the world reached the 8 GB app memory limit: Unreal commits most of its
+    /// memory as 64 KB reservations, so the swap tier backs whole reservations down
+    /// to 64 KB (broad, ml2191 grows one extent for side-by-side ones), the game's
+    /// images go to the swap file too, and a 1 GB video budget keeps Unreal's
+    /// texture pool small. No switches.
+    static let grounded = GameRecommendation(
+        id: "grounded", title: "Grounded", version: 1,
+        config: """
+        # Madeira's recommended settings for Grounded.
+        # Reset to Recommended, at the bottom of the game's settings, brings them back.
+        pool = 896
+        pool-split = 1
+        env.MADEIRA_X64_IMAGE_NOCOPY = 1
+        swap-mb = 8192
+        swap-mode = 2
+        env.MADEIRA_SWAP_MIN_KB = 64
+        swap-images = 1
+        vram-mb = 1024
+        env.MADEIRA_EC_HOOK_TRACE = 0
+        """)
+
     static let all = [rdr2Steam, rdr2Other, gta5EnhancedSteam, gta5EnhancedOther, ghostOfTsushima, godOfWar, horizonZeroDawn,
-                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, projectZomboid, projectZomboidB41,
-                      counterStrike2, escapists2, slayTheSpire2, garrysMod, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,
+                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, batmanArkhamCity, blackOps1, blackOps2, projectZomboid, projectZomboidB41,
+                      counterStrike2, escapists2, slayTheSpire2, garrysMod, grounded, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,
                       ffxivLauncher, ffxivSetup, standard]
 
     // MARK: Recognising a game
@@ -962,10 +1054,14 @@ enum GameRecommendations {
     static let rdr2AppID = 1174180, gta5EnhancedAppID = 3240220, ghostAppID = 2215430, godOfWarAppID = 1593500,
                horizonZeroDawnAppID = 1151640, darkSoulsRemasteredAppID = 570940, darkSoulsIIIAppID = 374320,
                projectZomboidAppID = 108600, counterStrike2AppID = 730, escapists2AppID = 641990,
-               slayTheSpire2AppID = 2868840, garrysModAppID = 4000
+               slayTheSpire2AppID = 2868840, garrysModAppID = 4000, groundedAppID = 962130
     static let falloutNewVegasAppID = 22380, fallout3AppIDs: Set<Int> = [22300, 22370]   // Fallout 3, its GOTY Edition
+    /// Batman: Arkham City's Game of the Year Edition and its first edition.
+    static let batmanArkhamCityAppIDs: Set<Int> = [200260, 57400]
     /// Black Ops II's campaign, Zombies and multiplayer.
     static let blackOps2AppIDs: Set<Int> = [202970, 212910, 202990]
+    /// The first Black Ops (its untested multiplayer, 42710, shares the folder).
+    static let blackOps1AppID = 42700
 
     /// The recommendation for a game, or nil.
     /// - windowsPath: a program ("C:\Games\GoW\GoW.exe"), or a library Steam
@@ -992,7 +1088,10 @@ enum GameRecommendations {
             if steamAppID == falloutNewVegasAppID || installFolder == "fallout new vegas" { return falloutNewVegas }
             if steamAppID.map(fallout3AppIDs.contains) == true || installFolder == "fallout 3"
                 || installFolder == "fallout 3 goty" { return fallout3 }
+            if batmanArkhamCityAppIDs.contains(steamAppID ?? 0) || installFolder == "batman arkham city goty"
+                || installFolder == "batman arkham city" { return batmanArkhamCity }
             if blackOps2AppIDs.contains(steamAppID ?? 0) || installFolder == "call of duty black ops ii" { return blackOps2 }
+            if steamAppID == blackOps1AppID || (steamAppID == nil && installFolder == "call of duty black ops") { return blackOps1 }
             if steamAppID == projectZomboidAppID || installFolder == "projectzomboid" {
                 return projectZomboidList(folder: path, fileExists: fileExists)
             }
@@ -1000,6 +1099,7 @@ enum GameRecommendations {
             if steamAppID == escapists2AppID || installFolder == "the escapists 2" { return escapists2 }
             if steamAppID == slayTheSpire2AppID || installFolder == "slay the spire 2" { return slayTheSpire2 }
             if steamAppID == garrysModAppID || installFolder == "garrysmod" { return garrysMod }
+            if steamAppID == groundedAppID || installFolder == "grounded" { return grounded }
             return nil
         }
         // A program, wherever it was installed: only the game's own programs, so a
@@ -1028,8 +1128,12 @@ enum GameRecommendations {
             return falloutNewVegas
         case "fallout3.exe":
             return fallout3
+        case "batmanac.exe":
+            return batmanArkhamCity
         case "t6sp.exe", "t6zm.exe", "t6mp.exe":
             return blackOps2
+        case "blackops.exe":
+            return blackOps1
         case "projectzomboid64.exe":
             return projectZomboidList(folder: path.lastIndex(of: "\\").map { String(path[..<$0]) } ?? "", fileExists: fileExists)
         case "cs2.exe":
@@ -1040,6 +1144,8 @@ enum GameRecommendations {
             return slayTheSpire2
         case "gmod.exe":
             return garrysMod
+        case "maine-win64-shipping.exe":
+            return grounded
         case "launcher.exe" where Array(parts.dropLast().suffix(2)) == ["rockstar games", "launcher"]:
             // The Rockstar Games Launcher outside Steam; another publisher's Launcher.exe gets nothing here.
             return rockstarLauncher

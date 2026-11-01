@@ -32,6 +32,7 @@
 #include "wine/winbase16.h"
 #include "wine/list.h"
 #include "wine/debug.h"
+#include "dbt.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(driver);
 WINE_DECLARE_DEBUG_CHANNEL(winediag);
@@ -826,6 +827,8 @@ static void ios_apply_fullscreen_foreground(void)
                  hwnd, (unsigned)pid, fg, (unsigned)fg_pid, ok );
 }
 
+static void ios_pad_hotplug_poll( DWORD mask );
+
 /* pProcessEvents: runs on every message poll of a wine thread (message_ios.c
  * process_driver_events), so a window's own thread gets here right after it
  * was shown. */
@@ -833,6 +836,7 @@ static BOOL winios_drv_process_events( DWORD mask )
 {
     if (ios_show_foreground) ios_apply_fullscreen_foreground();
     ios_foreground_if_none( "a message poll" );
+    ios_pad_hotplug_poll( mask );
     return winios_pProcessEvents ? winios_pProcessEvents( mask ) : FALSE;
 }
 
@@ -2810,6 +2814,155 @@ static const struct client_surface_funcs nulldrv_surface_funcs =
 struct client_surface *nulldrv_client_surface_create( HWND hwnd )
 {
     return client_surface_create( sizeof(struct client_surface), &nulldrv_surface_funcs, hwnd );
+}
+
+#include "../../app/Madeira/Winios/WiniosGamepad.h"
+
+/* ml2190: a controller turned on after the game started. XInputGetState
+ * reads the host slot on every call, so a game that polls all four slots sees
+ * a new pad at once, but many input layers enumerate once and look again only
+ * when Windows says a device came or went: SDL2 (its HWND_MESSAGE window
+ * registered for GUID_DEVINTERFACE_HID waits for DBT_DEVICEARRIVAL), GLFW
+ * (its helper window), Unreal Engine (any WM_DEVICECHANGE on its main window
+ * sets bNeedsControllerStateUpdate; until then it polls only pads it already
+ * knows) and DirectInput games that re-run EnumDevices on WM_DEVICECHANGE.
+ * Windows sends those from the PnP manager; a Madeira session runs no
+ * PlugPlay service, so RegisterDeviceNotification succeeds and nothing ever
+ * arrives, and such a game never sees a pad turned on mid-game.
+ *
+ * Standing in for it: at most every 250 ms a message poll compares which
+ * XInput slots are connected. When that changes, each wine thread, at its own
+ * next message poll (so the window procedure runs on its own thread and the
+ * message's pointer stays in-process), sends its top-level and message-only
+ * windows WM_DEVICECHANGE DBT_DEVICEARRIVAL / DBT_DEVICEREMOVECOMPLETE for a
+ * HID and an XUSB device interface per slot that changed, then sends its
+ * top-level windows DBT_DEVNODES_CHANGED, as Windows broadcasts. A thread
+ * starts from the slots connected at its first poll, so nothing is announced
+ * for a pad that was already there. Only polls that may dispatch sent
+ * messages (QS_SENDMESSAGE in the mask) deliver, never GetAsyncKeyState's.
+ * MADEIRA_PAD_HOTPLUG=0 turns this off. Logs [pad-hotplug] (24 lines). */
+static unsigned int ios_pad_hotplug_mask = ~0u;   /* ~0u: not sampled yet */
+static __thread unsigned int ios_pad_hotplug_seen;
+static __thread int ios_pad_hotplug_started;
+
+static unsigned int ios_pad_connected_mask(void)
+{
+    unsigned int mask = 0;
+    int i;
+
+    for (i = 0; i < WINIOS_GAMEPAD_MAX; i++)
+        if (winios_gamepad_get_state( i, NULL )) mask |= 1u << i;
+    return mask;
+}
+
+static unsigned int ios_pad_hotplug_sample( long long now, int force )
+{
+    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+    static long long next_ns;
+
+    if (force) pthread_mutex_lock( &lock );
+    else if (pthread_mutex_trylock( &lock )) return __atomic_load_n( &ios_pad_hotplug_mask, __ATOMIC_ACQUIRE );
+    if (force || now >= next_ns)
+    {
+        next_ns = now + 250000000LL;
+        __atomic_store_n( &ios_pad_hotplug_mask, ios_pad_connected_mask(), __ATOMIC_RELEASE );
+    }
+    pthread_mutex_unlock( &lock );
+    return __atomic_load_n( &ios_pad_hotplug_mask, __ATOMIC_ACQUIRE );
+}
+
+static void ios_pad_hotplug_send( HWND parent, DWORD tid, WPARAM event, unsigned int slots, BOOL nodes )
+{
+    static const GUID hid  = {0x4d1e55b2, 0xf16f, 0x11cf, {0x88, 0xcb, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30}};
+    static const GUID xusb = {0xec87f1e3, 0xc13b, 0x4100, {0xb5, 0xf7, 0x8b, 0x84, 0xd5, 0x42, 0x60, 0xcb}};
+    union
+    {
+        DEV_BROADCAST_DEVICEINTERFACE_W iface;
+        BYTE raw[sizeof(DEV_BROADCAST_DEVICEINTERFACE_W) + 128 * sizeof(WCHAR)];
+    } msg;
+    HWND *list;
+    int i, slot, kind;
+
+    if (!(list = list_window_children( parent ))) return;
+    for (i = 0; list[i]; i++)
+    {
+        if (get_window_thread( list[i], NULL ) != tid) continue;
+        for (slot = 0; event && slot < WINIOS_GAMEPAD_MAX; slot++)
+        {
+            if (!(slots & (1u << slot))) continue;
+            for (kind = 0; kind < 2; kind++)
+            {
+                char path[128];
+                int n, len;
+
+                /* A path shaped like an XInput pad's (IG_ marks XInput-class HID). */
+                len = snprintf( path, sizeof(path),
+                                kind ? "\\\\?\\USB#VID_045E&PID_028E#madeira-pad%d#{ec87f1e3-c13b-4100-b5f7-8b84d54260cb}"
+                                     : "\\\\?\\HID#VID_045E&PID_028E&IG_00#madeira-pad%d#{4d1e55b2-f16f-11cf-88cb-001111000030}",
+                                slot );
+                if (len < 0 || len >= 128) continue;
+                memset( &msg, 0, sizeof(msg) );
+                msg.iface.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
+                msg.iface.dbcc_classguid = kind ? xusb : hid;
+                for (n = 0; n <= len; n++) msg.iface.dbcc_name[n] = (WCHAR)(unsigned char)path[n];
+                msg.iface.dbcc_size = FIELD_OFFSET( DEV_BROADCAST_DEVICEINTERFACE_W, dbcc_name ) + (len + 1) * sizeof(WCHAR);
+                if (!is_window( list[i] )) break;
+                send_message( list[i], WM_DEVICECHANGE, event, (LPARAM)&msg );
+            }
+        }
+        if (nodes && is_window( list[i] )) send_message( list[i], WM_DEVICECHANGE, DBT_DEVNODES_CHANGED, 0 );
+    }
+    free( list );
+}
+
+static void ios_pad_hotplug_poll( DWORD mask )
+{
+    static int enabled = -1;
+    static unsigned int said;
+    unsigned int now_mask, changed, arrived, removed;
+    struct timespec ts;
+    long long now;
+    DWORD tid;
+
+    if (enabled < 0)
+    {
+        const char *env = getenv( "MADEIRA_PAD_HOTPLUG" );  /* 0: a controller turned on mid-game is not announced with WM_DEVICECHANGE */
+        enabled = !(env && env[0] == '0' && !env[1]);
+    }
+    if (!enabled) return;
+
+    clock_gettime( CLOCK_MONOTONIC, &ts );
+    now = (long long)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+    now_mask = ios_pad_hotplug_sample( now, __atomic_load_n( &ios_pad_hotplug_mask, __ATOMIC_ACQUIRE ) == ~0u );
+    if (!ios_pad_hotplug_started)
+    {
+        ios_pad_hotplug_started = 1;
+        ios_pad_hotplug_seen = now_mask;
+        return;
+    }
+    if (now_mask == ios_pad_hotplug_seen || !(mask & QS_SENDMESSAGE)) return;
+
+    changed = now_mask ^ ios_pad_hotplug_seen;
+    arrived = changed & now_mask;
+    removed = changed & ~now_mask;
+    ios_pad_hotplug_seen = now_mask;   /* first, so a window procedure that polls does not resend */
+
+    tid = GetCurrentThreadId();
+    if (removed)
+    {
+        ios_pad_hotplug_send( 0, tid, DBT_DEVICEREMOVECOMPLETE, removed, FALSE );
+        ios_pad_hotplug_send( get_hwnd_message_parent(), tid, DBT_DEVICEREMOVECOMPLETE, removed, FALSE );
+    }
+    if (arrived)
+    {
+        ios_pad_hotplug_send( 0, tid, DBT_DEVICEARRIVAL, arrived, FALSE );
+        ios_pad_hotplug_send( get_hwnd_message_parent(), tid, DBT_DEVICEARRIVAL, arrived, FALSE );
+    }
+    ios_pad_hotplug_send( 0, tid, 0, 0, TRUE );
+    if (__atomic_fetch_add( &said, 1, __ATOMIC_RELAXED ) < 24)
+        dprintf( 2, "[pad-hotplug] ml2190 pid %04x tid %04x: slots now 0x%x (arrived 0x%x, removed 0x%x): "
+                 "sent WM_DEVICECHANGE to this thread's windows (MADEIRA_PAD_HOTPLUG=0 disables)\n",
+                 (unsigned)GetCurrentProcessId(), (unsigned)tid, now_mask, arrived, removed );
 }
 
 /* ml1920: same-task controller snapshots supplied by the app. */

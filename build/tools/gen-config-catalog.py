@@ -43,6 +43,13 @@ INT_READERS = {"madeira_cfg_int", "mad_cfg_int_pe"}
 # Titles, kinds and fixed choices for options with a dedicated Settings row.
 # "choices" are (value, label); the empty value means "remove the key".
 OVERLAY = {
+    # From 125hz pr/recent-work-1028b (c1b08ee9, 55dff257).
+    "env.MADEIRA_THREAD_REAP_CHECKED": {"category": "Exceptions & threads", "title": "Check the previous exited thread before freeing it", "kind": "bool", "default": "1",
+                "note": "ml2290: on (default): a thread that exits frees the previous exited thread's stacks only after finding that thread, by its process, thread id and pthread, in the live TEB list. 32-bit processes started one after another can get the same window and TEB addresses; the unchecked hand-off then made a new thread free its own kernel stack at exit and hang there holding the memory lock (a launcher installer's second VC++ redistributable, the installer waiting on that thread forever). 0: the upstream hand-off."},
+    "env.MADEIRA_STORE_STEAM_IDENTITY": {"category": "App & front end", "title": "Give games from other stores the fixed Steam identity", "kind": "bool", "default": "0",
+                "note": "ml2310: off (default): a game from another store (an Epic library entry, or a program in a launcher's folders: Ubisoft Connect, Battle.net, Rockstar, FFXIV) starts without the fixed Steam identity (SteamAppId, SteamGameId, SteamAppPath) every other launch outside Madeira Dock gets. With it, a launcher took its Steam path, its Steam API start failed and it showed only an error (the Rockstar Games Launcher, 'Steam failed to initialize'). 1: publishes it as before."},
+    "env.MADEIRA_NO_STEAM_IDENTITY": {"category": "App & front end", "title": "", "kind": "text", "default": "",
+                "note": "set by the library for one launch of a game from another store; not a setting"},
     # Madeira in the background (app/Madeira/BackgroundRun.swift, build/ntdll-unix/audio_null_ios.c).
     "background-run": {"category": "App & front end", "title": "Keep a game running in the background (minutes)",
                 "kind": "int", "default": "10", "sources": ["app/Madeira/BackgroundRun.swift"],
@@ -75,6 +82,14 @@ OVERLAY = {
                 "kind": "int", "default": "10",
                 "note": "Default 10 ms between pasted characters. Range 5-100 ms; use a longer interval for games "
                         "that miss fast text input. Enforced at delivery as well as queueing. Restart the session after changing it."},
+    # Black Ops III (build/wine-patches/0019-ntdll-sysx64-file-for-x64-reads.patch, unix file.c).
+    "env.MADEIRA_SYSX64_FILE": {"category": "Wine core (ntdll)", "title": "x64 games read system DLLs from sysx64",
+                "kind": "bool", "default": "0",
+                "note": "Default off. 1: when an x64 game opens a .dll directly in system32 to read it, Madeira opens "
+                        "the x64 copy in sysx64 instead when one exists (Black Ops III checks its system DLLs this "
+                        "way). The loader and ntdll.dll are not affected. Set it in that game's own file; read once "
+                        "per session. Companion of env.MADEIRA_SYSX64_IMAGE.",
+                "sources": ["build/wine-patches/0019-ntdll-sysx64-file-for-x64-reads.patch"]},
     "env.MADEIRA_DOCK_STEAM_RUN": {"category": "Steam & Dock", "kind": "bool", "default": "1",
                 "note": "On by default: when a game in a Madeira Dock session asks Steam to start another game "
                         "(steam.exe with steam://run/<App ID>, as Black Ops II's campaign does for Zombies), "
@@ -500,6 +515,14 @@ OVERLAY = {
                 "note": "1 logs up to 64 successful 1–16 byte executable-image protection requests and their PE/pool bytes. Read-only, owner-aware diagnostics; does not alter hooks or code."},
     "env.MADEIRA_MOUSE_ROUTING": {"title": "Mouse routing and pointer-lock fixes",
         "note": "Default on. 0 restores the previous desktop cursor routing, mouse button callbacks, surface-touch handling and key-window-only pointer lock. Keyboard input and manual Ctrl+Alt+P remain available. Fully restart Madeira after changing this switch."},
+    "env.MADEIRA_SCM_ON_DEMAND": {"category": "Wine libraries", "title": "Start the service manager when a program needs it", "kind": "bool", "default": "1",
+                "note": "ml2270: on (default): when a 64-bit program opens the service manager and services.exe is not running (the session did not start Windows services first), sechost starts it once per process, waits up to 20 s for its pipe and asks again. Before, the call failed: a game from another store whose first start runs a launcher installer could not register the launcher's service and the installer stopped (testers' logs, 2026-10-28: the Rockstar Games Launcher installer from the Epic copy of GTA V Enhanced). 0: as before."},
+    "env.MADEIRA_STORE_STEAM_IDENTITY": {"category": "App & front end", "title": "Give games from other stores the fixed Steam identity", "kind": "bool", "default": "0",
+                "note": "ml2310: off (default): a game from another store (an Epic library entry) starts without the fixed Steam identity (SteamAppId, SteamGameId, SteamAppPath) every other launch outside Madeira Dock gets. With it, a game's launcher took its Steam path, its Steam API start failed and it showed only an error (testers' log, 2026-10-31: the Rockstar Games Launcher started by the Epic copy of GTA V Enhanced, 'Steam failed to initialize'). 1: publishes it as before."},
+    "env.MADEIRA_EPIC_LAUNCHER_PARENT": {"category": "App & front end", "title": "Start Epic games under the Epic client's name", "kind": "bool", "default": "1",
+                "note": "ml2320: on (default): an Epic library game's x64 program starts as the child of C:\\windows\\system32\\EpicGamesLauncher.exe (build/epic-parent: starts its command line, waits, returns its exit code; not the Epic client, no window, no network), as it does under the Epic client on Windows. A publisher's launcher that did not find a process with that name treated the Epic copy as not owned and showed its store page (testers' log, 2026-10-31: the Rockstar Games Launcher for the Epic copy of GTA V Enhanced, 'Failed to relaunch from third party platform', BUY NOW; Heroic does the same for that launcher). A batch or a 32-bit program starts as before. 0: the program starts directly."},
+    "env.MADEIRA_NO_STEAM_IDENTITY": {"category": "App & front end", "title": "", "kind": "text", "default": "",
+                "note": "set by the library for one launch of a game from another store; not a setting"},
     "swap-mb": { "note": "Moves game data to a file on this device's storage when memory runs short, up to this size. Off by default; read at launch.", "category": "Memory & JIT pool","title": "Swap tier size", "kind": "choice",
                 "choices": [("", "Off"), ("1024", "1 GB"), ("2048", "2 GB"), ("3072", "3 GB"), ("4096", "4 GB")]},
     "env.MADEIRA_SWAP_COVERAGE": {"category": "Memory & JIT pool", "note": "Which allocations the swap tier backs with its file (only when the tier is on). Large allocations (classic, the default): single 8 MB+ commits in the guest band. All allocations of 1 MB+ (blocks). 1 MB+ and overflow (wide): blocks plus allocations outside the band and fresh reservations. Whole reservations 4 MB+ (broad, ml1257): every new reservation of at least swap-min-mb (4 MB) below FEX's band backed whole when made, holes punched on decommit, swap-mb caps the disk it uses (a soft cap, checked when a block is backed). Unset: broad if swap-mode = 2, else classic.", "title": "Swap tier coverage", "kind": "choice",
@@ -850,6 +873,17 @@ OVERLAY = {
                         "sending GPU work iOS refuses in the background, so the game carries on where it was when "
                         "you come back. [wmt-bg] lines in the log. 0: the game keeps submitting, as before. Read once "
                         "per session."},
+    # DXMT's Direct3D 9 index buffers read it (dxmt, build/dxmt-patches/0005-d3d9-index-range-per-draw.patch).
+    "env.MADEIRA_D3D9_INDEX_RANGE": {"category": "Direct3D 9/10/11 (DXMT)",
+                "title": "Direct3D 9: upload only the index bytes a draw reads",
+                "kind": "bool", "default": "1", "sources": ["build/dxmt-patches/0005-d3d9-index-range-per-draw.patch"],
+                "note": "On by default. A 32-bit Direct3D 9 game writes its index buffers through a copy Madeira keeps; "
+                        "an indexed draw now copies only the indices it reads into the buffer the GPU reads, instead of "
+                        "the whole buffer before every draw after a lock (the slowdown in engines that lock a little of "
+                        "one big index buffer before each draw, such as Call of Duty's). A lock without NOOVERWRITE still "
+                        "gives the next draw a fresh buffer, so draws already recorded keep what they read. "
+                        "[d3d9-index-range] lines in the log say how much was copied. 0: the whole-buffer copy, as before. "
+                        "Read once per session."},
     # madeira-bcd: winemetal reads it (dxmt, build/dxmt-patches/0002-framegen-d3d12-pacing.patch; Tomba247's RDR2 work).
     "env.MADEIRA_FRAMEGEN_STALL_MS": {"category": "Direct3D 9/10/11 (DXMT)", "title": "Frame generation: stall threshold (ms)",
                 "kind": "int", "default": "125", "sources": ["build/dxmt-patches/0002-framegen-d3d12-pacing.patch"],

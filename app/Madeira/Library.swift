@@ -317,6 +317,15 @@ struct LibraryEntry: Codable, Identifiable {
     /// (epicAntiCheatOffProgram): nil or true starts that program.
     /// The anti-cheat cannot run in Wine on iOS, so on is the default.
     var epicAntiCheatOff: Bool?
+    /// FINAL FANTASY XIV (SquareEnixSignInView.swift, docs/SQUARE_ENIX_SIGNIN.md):
+    /// the license the account plays on, "windows" or "mac"; nil until chosen, and
+    /// Play asks for it first.
+    var squareEnixLicense: String?
+    /// FINAL FANTASY XIV: a free trial account.
+    var squareEnixFreeTrial: Bool?
+    /// FINAL FANTASY XIV: keep the Square Enix ID and password in the Keychain
+    /// (SquareEnixCredentialStore); nil or false keeps neither.
+    var squareEnixRemember: Bool?
     /// Games with an official way to start without Easy Anti-Cheat (offline modes
     /// only), as the program to start instead of the one Epic names. Rocket League:
     /// its Launcher.exe with -noeac ("No Easy Anti Cheat") starts RocketLeague.exe
@@ -377,7 +386,12 @@ struct LibraryEntry: Codable, Identifiable {
     /// Dock has Dock's own desktop and command (ContentView.startDock).
     var usesLaunchOptions: Bool { desktop != true && (steamAppID == nil || startsSteamGameDirectly) }
     /// ml1163: a game (not the Desktop entry) started inside the Wine desktop.
-    var runsInDesktop: Bool { usesLaunchOptions && launchMode == "desktop" }
+    /// FINAL FANTASY XIV signed in under a Windows license (its client is the launch's
+    /// transient program) always starts in the Wine desktop: that version starts a copy
+    /// of itself and exits, which a direct session cannot survive (docs/SQUARE_ENIX_SIGNIN.md).
+    var runsInDesktop: Bool {
+        usesLaunchOptions && (launchMode == "desktop" || (Self.transientProgram(for: id) != nil && squareEnixLicense == "windows"))
+    }
     /// The program's own arguments: Steam's launch configuration for "The game"
     /// followed by the entry's Launch arguments (Steam's own launch options, such as
     /// Garry's Mod's -nochromium), else the entry's Launch arguments; an Epic game's
@@ -399,9 +413,11 @@ struct LibraryEntry: Codable, Identifiable {
     /// applyEnvironment clears them once the bridge's command is exported.
     private static let transientLock = NSLock()
     private static var transient: [UUID: String] = [:]
+    private static var transientPrograms: [UUID: String] = [:]
     static func setTransientArguments(_ arguments: String?, for id: UUID) {
         transientLock.lock(); defer { transientLock.unlock() }
         transient[id] = arguments
+        if arguments == nil { transientPrograms[id] = nil }
     }
     static func transientArguments(for id: UUID) -> String? {
         transientLock.lock(); defer { transientLock.unlock() }
@@ -418,6 +434,17 @@ struct LibraryEntry: Codable, Identifiable {
     static func gogSetup(for id: UUID) -> String? {
         transientLock.lock(); defer { transientLock.unlock() }
         return gogSetup[id]
+    }
+    /// The program the launch being prepared starts instead of the entry's own,
+    /// relative to drive_c (FINAL FANTASY XIV: game/ffxiv_dx11.exe beside the
+    /// boot program an entry may name). Set with its arguments, cleared with them.
+    static func setTransientProgram(_ relativePath: String?, for id: UUID) {
+        transientLock.lock(); defer { transientLock.unlock() }
+        transientPrograms[id] = relativePath
+    }
+    static func transientProgram(for id: UUID) -> String? {
+        transientLock.lock(); defer { transientLock.unlock() }
+        return transientPrograms[id]
     }
     /// ml1163: the directory the program starts in (MADEIRA_WORKDIR): the chosen
     /// working folder, else Steam's for "The game", else the program's own folder.
@@ -493,18 +520,46 @@ struct LibraryEntry: Codable, Identifiable {
     /// With startServices the target is the services batch, which carries the
     /// arguments itself. The exe is launchWindowsPath: "The game"'s program for
     /// a Steam game started as its own program.
-    private var launchCommand: (exe: String, args: String) {
+    private var launchCommand: (exe: String, args: String) { launchCommand(parent: nil) }
+    /// ml2320: with `parent` (a program, never with a batch) the program starts as its child:
+    /// "<parent>" "<program>" args, in the Wine desktop or directly.
+    private func launchCommand(parent: String?) -> (exe: String, args: String) {
         func quoted(_ s: String) -> String { "\"\(s)\"" }
         var path = launchWindowsPath
         var extra = programArguments.trimmingCharacters(in: .whitespaces)
         var batch = isBatch
         if servicesScript != nil { path = servicesScriptPath; extra = ""; batch = true }
         func withExtra(_ s: String) -> String { extra.isEmpty ? s : s + " " + extra }
+        let parent = batch ? nil : parent
         if runsInDesktop {
-            return ("explorer.exe", "/desktop=shell,\(resolution) " + withExtra(batch ? "cmd /c \(quoted(path))" : quoted(path)))
+            let program = parent.map { quoted($0) + " " + quoted(path) } ?? quoted(path)
+            return ("explorer.exe", "/desktop=shell,\(resolution) " + withExtra(batch ? "cmd /c \(quoted(path))" : program))
         }
         if batch { return ("C:\\windows\\system32\\cmd.exe", withExtra("/c \(quoted(path))")) }
+        if let parent { return (parent, withExtra(quoted(path))) }
         return (path, programArguments)   // upstream's direct launch, arguments verbatim
+    }
+    /// ml2320: an Epic game's x64 program starts as the child of a process with the Epic client's
+    /// name (build/epic-parent), as it does under the Epic client on Windows. A publisher's launcher
+    /// that did not find that process treated the Epic copy as not owned and offered it for sale.
+    /// nil for any other entry, a batch, a 32-bit program, a build without the program, or with
+    /// env.MADEIRA_EPIC_LAUNCHER_PARENT=0.
+    var epicParent: String? {
+        guard epicAppName != nil, !isBatch, servicesScript == nil,
+              MadeiraConfig.get("env.MADEIRA_EPIC_LAUNCHER_PARENT") != "0",
+              Bundle.main.url(forResource: "EpicGamesLauncher", withExtension: "exe", subdirectory: "arm64ec-windows") != nil,
+              let url = Self.hostURL(ofWindowsPath: launchWindowsPath), Self.peMachine(url) == 0x8664 else { return nil }
+        return "C:\\windows\\system32\\EpicGamesLauncher.exe"
+    }
+    /// The PE machine of an executable (0x14c: 32-bit x86, 0x8664: x64), nil when unreadable.
+    static func peMachine(_ url: URL) -> Int? {
+        guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? h.close() }
+        guard let dos = try? h.read(upToCount: 64), dos.count == 64, dos[0] == 0x4d, dos[1] == 0x5a else { return nil }
+        let offset = (0..<4).reduce(UInt64(0)) { $0 | (UInt64(dos[60 + $1]) << ($1 * 8)) }
+        guard offset >= 64, offset < 16 * 1024 * 1024, (try? h.seek(toOffset: offset)) != nil,
+              let pe = try? h.read(upToCount: 6), pe.count == 6, Array(pe.prefix(4)) == [0x50, 0x45, 0, 0] else { return nil }
+        return Int(pe[4]) | Int(pe[5]) << 8
     }
     /// The details page's "command that runs" line: the program's file name and
     /// its arguments, as upstream shows a direct start; ml1163: what starts it
@@ -521,9 +576,11 @@ struct LibraryEntry: Codable, Identifiable {
 
     /// A Steam game that starts as its own program ("Start with: The game").
     var startsSteamGameDirectly: Bool { steamAppID != nil && steamStart == "game" }
-    /// What a launch starts, relative to drive_c: "The game"'s program inside the
-    /// install folder, else `relativePath`.
+    /// What a launch starts, relative to drive_c: the launch's transient program
+    /// (FINAL FANTASY XIV's client), "The game"'s program inside the install
+    /// folder, else `relativePath`.
     var launchRelativePath: String {
+        if let program = Self.transientProgram(for: id) { return program }
         if let app = epicAppName, epicAntiCheatOff != false, let program = Self.epicAntiCheatOffProgram[app] {
             // The program next to the one Epic names (Rocket League: Launcher.exe -> RocketLeague.exe).
             let folder = relativePath.split(separator: "/").dropLast().joined(separator: "/")
@@ -599,7 +656,8 @@ struct LibraryEntry: Codable, Identifiable {
     /// Runs on the launch worker, before the JIT pool is taken.
     func applyEnvironment() {
         configureLaunch()
-        // MADEIRA_ARGS now holds an Epic game's sign-in code; nothing else needs it.
+        // MADEIRA_ARGS now holds an Epic game's sign-in code or FINAL FANTASY XIV's
+        // session; nothing else needs it (this also clears the transient program).
         Self.setTransientArguments(nil, for: id)
         // x87: exported only when chosen. Automatic leaves FEX's own default (reduced
         // for 32-bit games, full for 64-bit) and any madeira.cfg line, and clears a
@@ -673,7 +731,16 @@ struct LibraryEntry: Codable, Identifiable {
     func configureLaunch() {
         // "The game"'s identity and the launch's working folder, for this launch only
         // (the bridge reads and clears them); every other launch starts without them.
-        unsetenv("MADEIRA_STEAM_APPID"); unsetenv("MADEIRA_STEAM_APPPATH"); unsetenv("MADEIRA_WORKDIR")
+        unsetenv("MADEIRA_STEAM_APPID"); unsetenv("MADEIRA_STEAM_APPPATH"); unsetenv("MADEIRA_WORKDIR"); unsetenv("MADEIRA_NO_STEAM_IDENTITY")
+        // FINAL FANTASY XIV signed in under a Windows license (its client is this launch's
+        // transient program): GetProcAddress finds no wine_get_host_version, as on Windows,
+        // since the game picks its Mac version when it finds it
+        // (build/wine-patches/0017-ntdll-hide-wine-host-version.patch).
+        if Self.transientProgram(for: id) != nil, squareEnixLicense == "windows" {
+            setenv("MADEIRA_HIDE_WINE_HOST_VERSION", "1", 1)
+        } else {
+            unsetenv("MADEIRA_HIDE_WINE_HOST_VERSION")
+        }
         if steamAppID != nil {
             // A Steam game through Madeira Dock: Dock has set what starts (ContentView.startDock);
             // the virtual monitor follows this entry's Resolution, as below. "The game" starts
@@ -683,7 +750,9 @@ struct LibraryEntry: Codable, Identifiable {
                 return
             }
         }
-        let command = desktop == true ? (exe: "explorer.exe", args: launchArguments) : launchCommand
+        let parent = desktop == true ? nil : epicParent
+        let command = desktop == true ? (exe: "explorer.exe", args: launchArguments) : launchCommand(parent: parent)
+        if parent != nil { fputs("[epic-parent] ml2320 the game starts as EpicGamesLauncher.exe's child\n", stderr) }
         setenv("MADEIRA_EXE", command.exe, 1)
         setenv("MADEIRA_ARGS", LaunchArgumentText.plain(command.args), 1)
         // Export both choices: unsetting Directly lets a global env.MADEIRA_DESKTOP=1
@@ -694,6 +763,22 @@ struct LibraryEntry: Codable, Identifiable {
             // folder) instead of the bridge's fixed one.
             setenv("MADEIRA_STEAM_APPID", String(steamAppID), 1)
             setenv("MADEIRA_STEAM_APPPATH", windowsPath, 1)
+        } else if steamAppID == nil, desktop != true,
+                  let game = DockGame.containing(windowsProgram: launchWindowsPath, in: MadeiraDock.games(drive: MadeiraDock.drive)) {
+            // A game added from a folder that Steam installed (a local entry for a program under
+            // steamapps/common/<game>): that game's own identity too, not the fixed Thumper one.
+            setenv("MADEIRA_STEAM_APPID", String(game.id), 1)
+            setenv("MADEIRA_STEAM_APPPATH", game.windowsInstallPath, 1)
+        }
+        // ml2310: a game from another store is not a Steam game. With the bridge's fixed Steam
+        // identity its launcher took its Steam path and failed; env.MADEIRA_STORE_STEAM_IDENTITY=1
+        // publishes it as before.
+        // Launchers' programs too (Ubisoft Connect, Battle.net, Rockstar, FFXIV, and the games
+        // they list): the Rockstar Games Launcher read SteamAppId as a Steam start.
+        let path = relativePath.lowercased()
+        let launcherProgram = steamAppID == nil && LauncherID.allCases.contains { id in id.sectionFolders.contains { path.hasPrefix($0 + "/") } }
+        if epicAppName != nil || launcherProgram, MadeiraConfig.get("env.MADEIRA_STORE_STEAM_IDENTITY") != "1" {
+            setenv("MADEIRA_NO_STEAM_IDENTITY", "1", 1)
         }
         // ml1163: a game starts in launchDirectory (a chosen folder, Steam's for "The game",
         // else the program's own). It is exported when the bridge's default, the folder of
@@ -990,6 +1075,8 @@ final class LibraryModel: ObservableObject {
     }
     func remove(_ id: UUID) {
         persist(entries.filter { $0.id != id })
+        // A FINAL FANTASY XIV entry's remembered sign-in goes with it (nothing for any other entry).
+        SquareEnixCredentialStore.delete(for: id)
     }
     /// A Steam game's library entry, which holds its per-game settings
     /// (SteamGames.swift). A game without one gets a new entry made from what
@@ -3060,8 +3147,10 @@ struct LibraryView: View {
     @ObservedObject private var steamGames = SteamGamesModel.shared
     @ObservedObject private var steamLibrary = SteamOwnedLibrary.shared
     private var entries: [LibraryEntry] {
-        // Steam games are listed in their own section (SteamGames.swift).
-        let visible = model.entries.filter { $0.desktop != true && $0.steamAppID == nil && $0.epicAppName == nil && $0.gogProductID == nil && $0.itchGameID == nil && $0.eaOfferID == nil && (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search)) }
+        // Steam games are listed in their own section (SteamGames.swift), and so is
+        // FINAL FANTASY XIV (FFXIVLibrary.swift).
+        let ffxivSection = FFXIVLibrary.enabled
+        let visible = model.entries.filter { $0.desktop != true && $0.steamAppID == nil && $0.epicAppName == nil && $0.gogProductID == nil && $0.itchGameID == nil && $0.eaOfferID == nil && !(ffxivSection && FFXIVLibrary.isFFXIV($0)) && (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search)) }
         if sort == "added" { return visible.reversed() }
         return visible.sorted {
             if sort == "played", $0.lastPlayed != $1.lastPlayed { return ($0.lastPlayed ?? .distantPast) > ($1.lastPlayed ?? .distantPast) }
@@ -3072,11 +3161,17 @@ struct LibraryView: View {
     /// Other games: the games you added, less the ones a launcher's section lists
     /// (LauncherGames.swift).
     private var otherEntries: [LibraryEntry] { entries.filter { LauncherID.owner(of: $0) == nil } }
+    /// FINAL FANTASY XIV's entries, for its section, by title.
+    private var ffxivEntries: [LibraryEntry] {
+        guard FFXIVLibrary.enabled else { return [] }
+        return model.entries.filter { FFXIVLibrary.isFFXIV($0) && (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search)) }
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    }
     /// The games you added in the page's order, for the controller's focus. Grouping
     /// and sorting go game by game, so their order among the Steam games is the
     /// order without them.
     private var focusOrder: [LibraryEntry] {
-        guard group != "platform" else { return entries }
+        guard group != "platform" else { return ffxivEntries + entries }
         // A library file edited by hand (or written by a fork) may repeat an id: keep the first.
         let positions = Dictionary(model.entries.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         let byID = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -3190,10 +3285,14 @@ struct LibraryView: View {
                 JITSettingsSection()
             }
             if settingsShow("signing", "expires", "refresh", "Apple", "sign-in", "7 days") { SigningSettingsSection() }
-            if settingsShow("diagnostics", "extended logging", "logging", "log") {
+            if settingsShow("diagnostics", "extended logging", "logging", "log", "help", "Claude") {
                 Section {
                     Toggle("Extended logging", isOn: $input.diagnostics)
-                } header: { Text("Diagnostics") }
+                    // ClaudeHelp.swift: the fixes guide, logs and madeira.cfg to a chat.
+                    ClaudeHelpButton(entry: nil)
+                } header: { Text("Diagnostics") } footer: {
+                    Text("Get Help from Claude shares a guide to known fixes, the last logs and madeira.cfg. For one game's config too, use the button on its Game details page.")
+                }
             }
             if settingsShow("pointer", "mouse", "cursor", "touch", "trackpad", "sensitivity") {
                 Section("Pointer") { LibraryPointerSettings() }
@@ -3334,6 +3433,12 @@ struct LibraryView: View {
                     SteamGamesSection(search: search, layout: layout, sort: sort, width: viewport.size.width,
                                       part: .installed, open: { selected = $0 })
                 }
+                // FINAL FANTASY XIV (FFXIVLibrary.swift): its entries, or an install card.
+                if FFXIVLibrary.enabled {
+                    FFXIVSection(entries: ffxivEntries, open: { selected = $0 }) { games in
+                        cells(games, width: viewport.size.width)
+                    }
+                }
                 if SteamGamesSection.shown {
                     VStack(alignment: .leading, spacing: 14) {
                         // Games are added with the + in the navigation bar.
@@ -3361,7 +3466,7 @@ struct LibraryView: View {
                 }
                 // The publishers' launchers (LauncherGames.swift): the launcher, its games
                 // in the library and the ones it installed that are not added yet.
-                ForEach(LauncherID.allCases) { id in
+                ForEach(LauncherID.allCases.filter { !($0 == .ffxiv && FFXIVLibrary.enabled) }) { id in
                     LauncherGamesSection(id: id, entries: entries.filter { LauncherID.owner(of: $0) == id },
                                          layout: layout, width: viewport.size.width) { entry, list, dense in
                         libraryItem(entry, list: list, dense: dense)
@@ -3629,6 +3734,14 @@ struct LibraryDetail: View {
     @State private var launchNotes: [LaunchCheckNote]?
     @State private var confirmPlayAnyway = false
     @State private var launchCheckRound = 0
+    /// FINAL FANTASY XIV's installation when this entry starts it (SquareEnixGame),
+    /// read when the page opens; its sign-in sheet, and whether it signed in.
+    @State private var squareEnix: FFXIVInstall?
+    @State private var squareEnixSignIn = false
+    @State private var squareEnixSignedIn = false
+    /// What Play's sign-in found pending (FFXIVLibrary.swift's Update section).
+    @State private var squareEnixUpdate: SquareEnixUpdate?
+    @ObservedObject private var ffxiv = FFXIVLibrary.shared
     @State private var copiedLink = false
     /// Share Setup and Apply Shared Setup (GameSetupShare.swift).
     @State private var shareSetup = false
@@ -3750,6 +3863,31 @@ struct LibraryDetail: View {
         }
         // "Will it run?" found something that stops the start: ask once per set of problems.
         if let notes = launchNotes, !LaunchCheck.acknowledged(entry, notes) { confirmPlayAnyway = true; return }
+        // FINAL FANTASY XIV signs in first, in its own sheet (SquareEnixSignInView.swift);
+        // launch() follows once the sheet has closed with a game session.
+        if squareEnix != nil {
+            guard !ffxiv.isBusy(entry.id) else {
+                error = "FINAL FANTASY XIV is downloading an update. Play when it finishes."; return
+            }
+            guard SquareEnixGame.license(of: entry) != nil else {
+                error = "Choose the license your Square Enix account plays on (Square Enix › License) before playing."; return
+            }
+            // ContentView.launchLibraryEntry's own checks, asked before the password
+            // rather than after a session that could not be used.
+            guard wine_process_is_running() == 0, wineserver_is_running() == 0, model.current == nil else {
+                error = "A session is already running."; return
+            }
+            if LibraryModel.sessionsThisRun > 0, MadeiraConfig.flag("MADEIRA_ONE_SESSION_PER_RUN") {
+                error = LibraryModel.restartMessage; return
+            }
+            error = nil
+            squareEnixSignIn = true
+            return
+        }
+        launch()
+    }
+    /// Play's hand-off: the starting screen grows out of Play, and ContentView starts the entry.
+    private func launch() {
         leaving = true
         let steamCover = entry.coverFile == nil ? entry.steamAppID : nil
         LaunchCurtain.shared.begin(from: playFrame, appID: steamCover, artwork: steamCover.flatMap { id in
@@ -4000,7 +4138,7 @@ struct LibraryDetail: View {
                 TextField("Launch arguments", text: $entry.arguments.plainLaunchArguments, axis: .vertical)
                     .font(.body.monospaced()).lineLimit(1...4)
                     .autocorrectionDisabled().textInputAutocapitalization(.never).smartPunctuationOff()
-                LaunchFlagChips(arguments: $entry.arguments)
+                LaunchFlagChips(arguments: $entry.arguments, program: entry.relativePath)
                 // What the next start runs (ml1163: in the Wine desktop, a batch file or
                 // the services batch, what starts the program).
                 Text(entry.commandPreview)
@@ -4222,6 +4360,12 @@ struct LibraryDetail: View {
                 if entry.eaOfferID != nil {
                     EAEntrySection(entry: $entry) { leaving = true; dismiss() }
                 }
+                if let install = squareEnix {
+                    if FFXIVLibrary.enabled {
+                        FFXIVUpdateSection(entry: entry, install: install, update: $squareEnixUpdate)
+                    }
+                    SquareEnixEntrySection(entry: $entry)
+                }
                 Section {
                     FPSChoice(mode: $entry.fpsMode)
                     Toggle("Performance overlay", isOn: $entry.performance)
@@ -4252,6 +4396,8 @@ struct LibraryDetail: View {
                         let configText = entry.config ?? ""
                         UIPasteboard.general.string = configText.isEmpty ? "# Default configuration" : configText
                     }
+                    // ClaudeHelp.swift: the fixes guide, the logs and this game's config to a chat.
+                    ClaudeHelpButton(entry: entry)
                     Button("Reset to Recommended", systemImage: "arrow.counterclockwise") { confirmReset = true }
                         .confirmationDialog(GameRecommendations.question(recommended, desktop: entry.desktop == true),
                                             isPresented: $confirmReset, titleVisibility: .visible) {
@@ -4294,6 +4440,15 @@ struct LibraryDetail: View {
                 prepareRecommendation()
                 reloadBCD()
             }
+            // FINAL FANTASY XIV: Square Enix sign-in. A session left from a launch that
+            // never started (one that stopped before applyEnvironment) is dropped when
+            // the page first opens, so it is neither shown in the command line nor
+            // reused; never again, or a session just signed in could go with it.
+            .onAppear {
+                guard squareEnix == nil else { return }
+                squareEnix = SquareEnixGame.install(for: entry)
+                if squareEnix != nil { LibraryEntry.setTransientArguments(nil, for: entry.id) }
+            }
         }
         .sheet(isPresented: $shareSetup) { GameSetupShareSheet(entry: entry) }
         .sheet(item: $setupToApply) { pending in
@@ -4312,6 +4467,21 @@ struct LibraryDetail: View {
             Button("OK", role: .cancel) {}
         } message: { Text(setupError ?? "") }
         .sheet(isPresented: $findCover) { SteamSearchView(query: entry.title) { match in entry.steamID = match.id; entry.title = match.name; entry.coverFile = nil } }
+        .sheet(isPresented: $squareEnixSignIn, onDismiss: {
+            guard squareEnixSignedIn else { return }
+            squareEnixSignedIn = false
+            launch()
+        }) {
+            if let install = squareEnix, let license = SquareEnixGame.license(of: entry) {
+                SquareEnixSignInSheet(entry: entry, install: install, license: license,
+                                      updateNeeded: FFXIVLibrary.enabled ? { squareEnixUpdate = $0 } : nil) { signedIn in
+                    // This launch only: the client and its session (LibraryEntry's transient values).
+                    LibraryEntry.setTransientProgram(SquareEnixGame.clientRelativePath(for: entry), for: entry.id)
+                    LibraryEntry.setTransientArguments(signedIn.arguments.joined(separator: " "), for: entry.id)
+                    squareEnixSignedIn = true
+                }
+            }
+        }
         .fileImporter(isPresented: $importCover, allowedContentTypes: [.image]) { result in
             do {
                 let url = try result.get(); let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
@@ -4333,6 +4503,7 @@ struct LibraryDetail: View {
         .onDisappear { if !leaving { model.save(entry) } }
         .onReceive(LibraryController.shared.commands) { command in
             guard !leaving, !findCover, !importCover, !remove, !confirmReset, !confirmPlayAnyway else { return }
+            guard !squareEnixSignIn else { return }
             if command == "back" {
                 if path.isEmpty { model.save(entry); dismiss() } else { path.removeLast() }
             }
@@ -4646,8 +4817,27 @@ struct ControllerModeChoice: View {
 /// Game details › Launch arguments: one chip per common flag, highlighted when
 /// the arguments contain it; a tap adds or removes it. -dx9 to -dx12 exclude each
 /// other, as do -windowed and -fullscreen. Quoted arguments are kept whole.
+/// For Battle.net's launcher a second row names each Blizzard game: a tap sets
+/// --exec="launch <code>" (one at a time), so the entry opens straight into that game.
 struct LaunchFlagChips: View {
     @Binding var arguments: String
+    var program: String = ""
+
+    /// Battle.net's programs (relative path's last part), which take --exec="launch <code>".
+    static func isBattleNet(_ program: String) -> Bool {
+        let name = program.split(separator: "/").last.map { $0.lowercased() } ?? ""
+        return name == "battle.net launcher.exe" || name == "battle.net.exe"
+    }
+    /// The Blizzard games by name, with their launch switch.
+    static let blizzardChips: [(name: String, flag: String)] = LauncherID.blizzardCodes
+        .sorted { $0.key < $1.key }.map { ($0.key, "--exec=\"launch \($0.value)\"") }
+    /// The arguments with `flag` as the one --exec switch, or without it when it is already there.
+    static func blizzardToggled(_ text: String, _ flag: String) -> String {
+        let on = contains(text, flag)
+        var parts = tokens(text).filter { !$0.lowercased().hasPrefix("--exec=") }
+        if !on { parts.append(flag) }
+        return parts.joined(separator: " ")
+    }
     static let flags = ["-dx11", "-dx12", "-dx10", "-dx9", "-windowed", "-fullscreen", "-nosplash"]
 
     /// The arguments split at unquoted spaces and tabs, quotes kept.
@@ -4690,6 +4880,20 @@ struct LaunchFlagChips: View {
                         .buttonStyle(.bordered).tint(on ? Color.accentColor : Color.gray)
                         .font(.caption.monospaced())
                         .accessibilityValue(on ? "On" : "Off")
+                }
+            }
+        }
+        if Self.isBattleNet(program) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Self.blizzardChips, id: \.flag) { chip in
+                        let on = Self.contains(arguments, chip.flag)
+                        Button(chip.name) { arguments = Self.blizzardToggled(arguments, chip.flag) }
+                            .buttonStyle(.bordered).tint(on ? Color.accentColor : Color.gray)
+                            .font(.caption)
+                            .accessibilityHint("Starts \(chip.name) through Battle.net")
+                            .accessibilityValue(on ? "On" : "Off")
+                    }
                 }
             }
         }

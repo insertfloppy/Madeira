@@ -51,6 +51,8 @@ struct LaunchCheckNote: Identifiable, Equatable {
     let title: String
     let detail: String
     var fix: Fix? = nil
+    /// A page with more about the note (a known issue's report on GitHub).
+    var link: URL? = nil
 }
 
 enum LaunchCheck {
@@ -85,6 +87,8 @@ enum LaunchCheck {
         var freeBytes: Int64?
         /// The game's device test, when it had one (KnownGames).
         var tested: KnownGame?
+        /// Problems other players reported for this game (KnownIssues).
+        var knownIssues: [KnownIssue] = []
     }
 
     static let gb: Double = 1_073_741_824
@@ -136,6 +140,10 @@ enum LaunchCheck {
             notes.append(LaunchCheckNote(id: "space", level: free < 512 * 1_048_576 ? .problem : .caution,
                                          title: "Only \(gigabytes(UInt64(free))) free",
                                          detail: "Games write saves, settings and shader caches while they run. A full device can crash the game or cut a save short. Free some space first."))
+        }
+        for issue in input.knownIssues {
+            notes.append(LaunchCheckNote(id: "known-issue." + issue.id, level: issue.level, title: "Known issue: " + issue.title,
+                                         detail: issue.text, link: issue.link))
         }
         if let tested = input.tested {
             notes.append(LaunchCheckNote(id: "tested", level: .good, title: "Tested: runs on Madeira",
@@ -358,7 +366,7 @@ enum KnownGames {
         KnownGame(id: "project-zomboid", title: "Project Zomboid", appIDs: [108600],
                   folders: ["projectzomboid"], programs: ["projectzomboid64.exe"],
                   tests: [onIPhone17ProMax(build: 60)],
-                  note: "With Madeira's recommended settings. Loading to the main menu takes about 2 to 3 minutes; it isn't frozen, so leave it running."),
+                  note: "With Madeira's recommended settings."),
         KnownGame(id: "megabonk", title: "Megabonk", appIDs: [],
                   folders: ["megabonk"], programs: ["megabonk.exe"],
                   tests: [KnownTest(device: nil, os: nil, build: 31, memoryGB: 0)], note: ""),
@@ -367,18 +375,203 @@ enum KnownGames {
                   folders: ["garrysmod"], programs: ["gmod.exe"],
                   tests: [onIPhone17ProMax(build: 60)],
                   note: "Multiplayer, on Steam version x86-64 with -nochromium in Launch arguments and Madeira's recommended settings. The main menu doesn't load yet (\"Menu failed to load\"): use the server browser, or press ~ for the console and type connect <address>. Single player: in the console, gamemode sandbox, then map gm_construct. Server web pages (welcome screens, some HUD icons) stay blank."),
+        KnownGame(id: "grounded", title: "Grounded", appIDs: [962130],
+                  folders: ["grounded"], programs: ["maine-win64-shipping.exe"],
+                  tests: [onIPhone17ProMax(build: 63)],
+                  note: "With Madeira's recommended settings. Loading into the world is slow: much of the game's memory goes to the swap file on storage. Low graphics settings help."),
         KnownGame(id: "fallout-new-vegas", title: "Fallout: New Vegas", appIDs: [22380],
                   folders: ["fallout new vegas"], programs: ["falloutnv.exe"],
                   tests: [onIPhone17ProMax(build: 18)],
                   note: "Saves load with Older NVIDIA card (Direct3D 9), which Madeira turns on for it."),
+        KnownGame(id: "batman-arkham-city", title: "Batman: Arkham City", appIDs: [200260],
+                  folders: ["batman arkham city goty"], programs: ["batmanac.exe"],
+                  tests: [onIPhone17ProMax(build: 63)],
+                  note: "With Older NVIDIA card (Direct3D 9), which Madeira turns on for it. Without it the game opens its own launcher instead and the session ends."),
+        // BlackOps.exe through Steam; multiplayer (42710, BlackOpsMP.exe) shares the folder and is untested.
+        KnownGame(id: "black-ops-1", title: "Call of Duty: Black Ops", appIDs: [42700],
+                  folders: [], programs: ["blackops.exe"],
+                  tests: [onIPhone17ProMax(build: 64)],
+                  note: "Through Steam, with Madeira's recommended settings. Multiplayer is untested."),
     ]
 
     /// The device test for a game: `windowsPath` is a program or a Steam game's install folder.
     static func find(windowsPath: String, steamAppID: Int?) -> KnownGame? {
         if let steamAppID, let game = all.first(where: { $0.appIDs.contains(steamAppID) }) { return game }
-        let parts = windowsPath.replacingOccurrences(of: "/", with: "\\").lowercased().split(separator: "\\").map(String.init)
-        guard let last = parts.last else { return nil }
+        guard let last = lastPart(windowsPath) else { return nil }
         if last.hasSuffix(".exe") { return all.first { $0.programs.contains(last) } }
         return all.first { $0.folders.contains(last) }
+    }
+    /// The last part of a Windows path, lowercased: a program or an install folder.
+    static func lastPart(_ windowsPath: String) -> String? {
+        windowsPath.replacingOccurrences(of: "/", with: "\\").lowercased().split(separator: "\\").last.map(String.init)
+    }
+}
+
+/// A problem other players reported for one game on the main Madeira project's
+/// issue tracker (github.com/willfaust/Madeira/issues) that this build does not
+/// fix yet. Will it run? shows it as "Known issue: ..." with a link to the report.
+/// Reports that Madeira has fixed since are left out of `KnownIssues.all`.
+/// Recognised like KnownGame: a Steam App ID, the install folder or the program.
+struct KnownIssue: Equatable {
+    let id: String
+    let game: String
+    let appIDs: Set<Int>
+    /// Lowercased folder names (steamapps\common or wherever it was copied).
+    let folders: Set<String>
+    /// Lowercased program names.
+    let programs: Set<String>
+    /// .caution when the game may not start or play; .info for smaller problems.
+    let level: LaunchCheckNote.Level
+    /// Short, after "Known issue: ".
+    let title: String
+    /// What happens and what to try, in plain words.
+    let detail: String
+    /// The report's number on github.com/willfaust/Madeira; nil for the project's
+    /// own device-tested notes (those may be on a Tested game).
+    var report: Int? = nil
+    /// The Madeira version the report was made on ("0.1.3").
+    var version = ""
+
+    var link: URL? { report.map { URL(string: "https://github.com/willfaust/Madeira/issues/\($0)")! } }
+    var text: String { report == nil ? detail : detail + " Reported by a player on Madeira \(version); it may behave differently in this build." }
+}
+
+enum KnownIssues {
+    static let all: [KnownIssue] = [
+        // Device-tested on our builds (no upstream report).
+        KnownIssue(id: "project-zomboid-loading", game: "Project Zomboid", appIDs: [108600],
+                   folders: ["projectzomboid"], programs: ["projectzomboid64.exe"], level: .info,
+                   title: "slow first load",
+                   detail: "It takes 2 to 4 minutes to load to the main menu. It isn't frozen, so leave it running. Once in game it runs fine."),
+        KnownIssue(id: "silksong-cutscenes", game: "Hollow Knight: Silksong", appIDs: [1030300],
+                   folders: ["hollow knight silksong"], programs: ["hollow knight silksong.exe"], level: .info,
+                   title: "cutscenes are black",
+                   detail: "Gameplay works, but most cutscene videos show a black screen while their sound plays. If quitting the game doesn't end the session, use Force close Madeira.",
+                   report: 364, version: "0.1.3"),
+        KnownIssue(id: "portal-2-controller", game: "Portal 2", appIDs: [620],
+                   folders: ["portal 2"], programs: ["portal2.exe"], level: .info,
+                   title: "controllers may not work",
+                   detail: "The game runs at 60 FPS, but neither the on-screen pad nor a Bluetooth controller reached it. The on-screen pad in Keyboard and mouse mode works.",
+                   report: 192, version: "0.1.3"),
+        KnownIssue(id: "nfs-most-wanted-2012-input", game: "Need for Speed: Most Wanted (2012)", appIDs: [1262580],
+                   folders: [], programs: ["nfs13.exe"], level: .caution,
+                   title: "stuck at \"Press any key\"",
+                   detail: "Taps, keys and the on-screen pad went to the Windows desktop instead of the game window, so the title screen never moved on.",
+                   report: 104, version: "0.1.0"),
+        KnownIssue(id: "outlast-illegal-instruction", game: "Outlast", appIDs: [238320],
+                   folders: ["outlast"], programs: ["olgame.exe"], level: .caution,
+                   title: "crashes while starting",
+                   detail: "The game stops with \"illegal instruction\" (C000001D) during loading. Try Game details > Compatibility > AVX and AVX2.",
+                   report: 132, version: "0.1.3"),
+        KnownIssue(id: "balatro-ipad-m5", game: "Balatro", appIDs: [2379780],
+                   folders: ["balatro"], programs: ["balatro.exe"], level: .info,
+                   title: "crash on iPad Pro M5",
+                   detail: "On an iPad Pro M5 the game crashed during start-up when started with Start with > The game. Start it through Steam (Madeira Dock) instead.",
+                   report: 255, version: "0.1.3"),
+        KnownIssue(id: "minecraft-dungeons", game: "Minecraft Dungeons", appIDs: [1672970],
+                   folders: ["minecraft dungeons"], programs: [], level: .caution,
+                   title: "crashes at start",
+                   detail: "The game crashed whether it was started from Steam or from its own program.",
+                   report: 259, version: "0.1.3"),
+        KnownIssue(id: "minecraft-dungeons-2", game: "Minecraft Dungeons II", appIDs: [],
+                   folders: ["minecraft dungeons ii"], programs: [], level: .caution,
+                   title: "crashes at start",
+                   detail: "The game stops with an instruction the CPU translator can't run, before its window opens. Try Game details > Compatibility > AVX and AVX2.",
+                   report: 254, version: "0.1.3"),
+        KnownIssue(id: "beamng-drive", game: "BeamNG.drive", appIDs: [284160],
+                   folders: ["beamng.drive"], programs: ["beamng.drive.x64.exe"], level: .caution,
+                   title: "launch gives up",
+                   detail: "\"Starting your game...\" stops after about 17 seconds and returns to the library with no error.",
+                   report: 432, version: "0.1.3"),
+        KnownIssue(id: "bright-memory-infinite", game: "Bright Memory: Infinite", appIDs: [1178830],
+                   folders: ["bright memory infinite"], programs: [], level: .caution,
+                   title: "doesn't start",
+                   detail: "A player reported the game doesn't start.",
+                   report: 332, version: "0.1.3"),
+        KnownIssue(id: "imperial-glory-menus", game: "Imperial Glory", appIDs: [277450],
+                   folders: ["imperial glory"], programs: [], level: .caution,
+                   title: "menu buttons are invisible",
+                   detail: "The main menu's background shows, but its buttons and text are not drawn. Changing Direct3D 9 mode, Windows version or resolution didn't help.",
+                   report: 383, version: "0.1.3"),
+        KnownIssue(id: "ff7-1998-free-apple-id", game: "Final Fantasy VII (1998)", appIDs: [39140],
+                   folders: ["final fantasy vii"], programs: ["ff7.exe", "ff7_en.exe"], level: .info,
+                   title: "black screen with a free Apple ID",
+                   detail: "With a free Apple ID (no Memory+ or extended memory), the game stayed on \"Still starting\" because there wasn't room for a 32-bit game. A paid developer account with Memory+ avoids it.",
+                   report: 390, version: "0.1.3"),
+        KnownIssue(id: "tf2-gl-context", game: "Team Fortress 2", appIDs: [440],
+                   folders: ["team fortress 2"], programs: [], level: .caution,
+                   title: "\"Failed to create D3D9\"",
+                   detail: "The game closed at once with \"Failed to get a GL context\". Set Settings > Graphics > Direct3D 9 back to DXMT (default) and try again.",
+                   report: 424, version: "0.1.3"),
+        KnownIssue(id: "kingdom-hearts-black", game: "Kingdom Hearts HD 1.5+2.5 ReMIX", appIDs: [2552430],
+                   folders: [], programs: [], level: .caution,
+                   title: "black screen",
+                   detail: "Kingdom Hearts Final Mix and Kingdom Hearts II Final Mix stayed on a black screen at 0 FPS.",
+                   report: 433, version: "0.1.3"),
+        KnownIssue(id: "astroneer-config", game: "Astroneer", appIDs: [361420],
+                   folders: ["astroneer"], programs: [], level: .caution,
+                   title: "times out while starting",
+                   detail: "The launch waited 150 seconds at the configuration step and gave up.",
+                   report: 457, version: "0.1.3"),
+        KnownIssue(id: "bad-company-2-campaign", game: "Battlefield: Bad Company 2", appIDs: [24960],
+                   folders: ["battlefield bad company 2"], programs: ["bfbc2game.exe"], level: .caution,
+                   title: "hangs at the campaign start",
+                   detail: "The game gets to the campaign's \"October 6th\" intro text and stops there.",
+                   report: 474, version: "0.1.3"),
+        KnownIssue(id: "dark-souls-2-title", game: "Dark Souls II: Scholar of the First Sin", appIDs: [335300],
+                   folders: [], programs: ["darksoulsii.exe"], level: .caution,
+                   title: "black title screen, then a crash",
+                   detail: "The title screen stayed black and the game crashed shortly after. It also didn't fill the screen.",
+                   report: 492, version: "0.1.3"),
+        KnownIssue(id: "undertale-fullscreen", game: "Undertale", appIDs: [391540],
+                   folders: ["undertale"], programs: ["undertale.exe"], level: .info,
+                   title: "doesn't fill the screen",
+                   detail: "The game's small window doesn't grow to the whole screen. Try Game details > Display > Aspect & scaling, or a different Resolution.",
+                   report: 492, version: "0.1.3"),
+        KnownIssue(id: "cyberpunk-launcher", game: "Cyberpunk 2077", appIDs: [1091500],
+                   folders: ["cyberpunk 2077"], programs: ["cyberpunk2077.exe", "redprelauncher.exe"], level: .caution,
+                   title: "crashes in its launcher",
+                   detail: "REDprelauncher crashed, and starting the game directly stopped before graphics started (8 GB iPad). Turn Memory+ on, start it through Steam, and add --launcher-skip to Launch arguments.",
+                   report: 504, version: "0.1.3"),
+        KnownIssue(id: "maplestory-launcher", game: "MapleStory", appIDs: [216150],
+                   folders: ["maplestory"], programs: ["maplestory.exe"], level: .caution,
+                   title: "Nexon launcher crashes",
+                   detail: "The Nexon launcher asks for 64 GB of memory space at start and crashes, so it can't start the game.",
+                   report: 329, version: "0.1.3"),
+        KnownIssue(id: "lego-indiana-jones-relaunch", game: "LEGO Indiana Jones: The Original Adventures", appIDs: [32330],
+                   folders: [], programs: ["legoindy.exe"], level: .caution,
+                   title: "can close Madeira",
+                   detail: "The game restarts itself through Steam, and that second start crashed the whole app. Older Steam games with the same copy protection may do the same.",
+                   report: 234, version: "0.1.3"),
+        KnownIssue(id: "civilization-vi-slow", game: "Sid Meier's Civilization VI", appIDs: [289070],
+                   folders: ["sid meier's civilization vi"], programs: ["civilizationvi.exe"], level: .info,
+                   title: "runs slowly",
+                   detail: "The game runs but is held back by the CPU translator, so turns and menus are slow.",
+                   report: 373, version: "0.1.3"),
+        KnownIssue(id: "crysis-2-hang", game: "Crysis 2 Maximum Edition", appIDs: [108800],
+                   folders: [], programs: ["crysis2.exe", "crysis2launcher.exe"], level: .caution,
+                   title: "hangs before the picture starts",
+                   detail: "The game stopped very early in start-up, before any graphics, every time it was tried. (Crysis 2 Remastered is a different game.)",
+                   report: 446, version: "iDeck build 56"),
+        KnownIssue(id: "burnout-paradise-sse2", game: "Burnout Paradise", appIDs: [24740, 1238080],
+                   folders: [], programs: ["burnoutparadise.exe"], level: .caution,
+                   title: "\"CPU Error\" about SSE2",
+                   detail: "The game says SSE2 isn't supported and exits. Its CPU check misfires on CPUs with many cores: set Game details > Compatibility > CPU cores reported to 4.",
+                   report: 116, version: "0.1.0"),
+        KnownIssue(id: "diablo-2-resurrected", game: "Diablo II: Resurrected", appIDs: [],
+                   folders: ["diablo ii resurrected"], programs: ["d2r.exe"], level: .caution,
+                   title: "crashes while starting",
+                   detail: "D2R.exe stopped while loading D2R_loader.dll, before the game's window opened.",
+                   report: 354, version: "0.1.3"),
+    ]
+
+    /// The reports for a game: `windowsPath` is a program or a Steam game's install folder.
+    static func find(windowsPath: String, steamAppID: Int?) -> [KnownIssue] {
+        let last = KnownGames.lastPart(windowsPath)
+        return all.filter { issue in
+            if let steamAppID, issue.appIDs.contains(steamAppID) { return true }
+            guard let last else { return false }
+            return last.hasSuffix(".exe") ? issue.programs.contains(last) : issue.folders.contains(last)
+        }
     }
 }

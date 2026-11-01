@@ -1978,6 +1978,21 @@ static int ios_alias_write( uintptr_t addr, const void *source, size_t size, uin
     return 1;
 }
 
+/* Base-register writeback for a single-register store (STR/STRB/STRH immediate,
+ * post-index or pre-index): Rn += sign-extended imm9. Register numbers 29, 30 and
+ * 31 are FP, LR and SP here (31 is SP when used as a base), which live outside
+ * the __x[] array of arm_thread_state64_t, so they are written by name. */
+static void ios_store_imm9_writeback( arm_thread_state64_t *st, uint32_t insn )
+{
+    unsigned rn = (insn >> 5) & 31;
+    int64_t imm9 = (insn >> 12) & 0x1ff;
+    if (imm9 & 0x100) imm9 -= 0x200;
+    if (rn < 29) st->__x[rn] = (uint64_t)((int64_t)st->__x[rn] + imm9);
+    else if (rn == 29) st->__fp = (uint64_t)((int64_t)st->__fp + imm9);
+    else if (rn == 30) st->__lr = (uint64_t)((int64_t)st->__lr + imm9);
+    else st->__sp = (uint64_t)((int64_t)st->__sp + imm9);
+}
+
 /* GPR STP/STNP, including pre/post-index writeback. gpr[31] is SP when
  * used as a base, but register 31 as a store source is always zero. */
 static int ios_alias_store_pair( uint32_t insn, uintptr_t addr, uint64_t gpr[32], uintptr_t *blocked,
@@ -5010,7 +5025,7 @@ static void *ios_mach_exception_thread( void *arg )
                         emulated = ios_alias_write( fault_addr, &value, sizeof(value), &alias_fault, honor_guest_prot );
                     }
                     /* STR (immediate, post/pre-index, 64-bit): 1111 1000 00 0imm9 0[10]1 Rn Rt */
-                    else if ((insn & 0xffe00000) == 0xf8000000 && (insn & 0x800) == 0)
+                    else if ((insn & 0xffe00000) == 0xf8000000 && ((insn >> 10) & 3) != 2)
                     {
                         int rt = insn & 0x1f;
                         uint64_t value = IOS_STORE_SRC(rt);
@@ -5018,62 +5033,42 @@ static void *ios_mach_exception_thread( void *arg )
                         /* Post-index (bits 11:10 = 01) / pre-index (bits 11:10 = 11):
                          * MUST update Rn += signed imm9. Without this, memcpy-style
                          * loops would write the same address forever. */
-                        int idx_mode = (insn >> 10) & 3;  // bits 11:10
+                        int idx_mode = (insn >> 10) & 3;  // bits 11:10: 00 STUR, 01 post-index, 11 pre-index
                         if (emulated && (idx_mode == 1 || idx_mode == 3))
-                        {
-                            int rn = (insn >> 5) & 0x1f;
-                            int imm9 = (insn >> 12) & 0x1ff;
-                            if (imm9 & 0x100) imm9 |= ~0x1ff;  // sign-extend 9-bit
-                            state.__x[rn] = (uint64_t)((int64_t)state.__x[rn] + imm9);
-                        }
+                            ios_store_imm9_writeback( &state, insn );
                     }
                     /* STR (immediate, post/pre-index, 32-bit): 1011 1000 00 0imm9 0[10]1 Rn Rt */
-                    else if ((insn & 0xffe00000) == 0xb8000000 && (insn & 0x800) == 0)
+                    else if ((insn & 0xffe00000) == 0xb8000000 && ((insn >> 10) & 3) != 2)
                     {
                         int rt = insn & 0x1f;
                         uint32_t value = (uint32_t)IOS_STORE_SRC(rt);
                         emulated = ios_alias_write( fault_addr, &value, sizeof(value), &alias_fault, honor_guest_prot );
-                        int idx_mode = (insn >> 10) & 3;
+                        int idx_mode = (insn >> 10) & 3;  // bits 11:10: 00 STUR, 01 post-index, 11 pre-index
                         if (emulated && (idx_mode == 1 || idx_mode == 3))
-                        {
-                            int rn = (insn >> 5) & 0x1f;
-                            int imm9 = (insn >> 12) & 0x1ff;
-                            if (imm9 & 0x100) imm9 |= ~0x1ff;
-                            state.__x[rn] = (uint64_t)((int64_t)state.__x[rn] + imm9);
-                        }
+                            ios_store_imm9_writeback( &state, insn );
                     }
                     /* STRB (immediate, post/pre-index, 8-bit): 0011 1000 00 0imm9 0[10]1 Rn Rt
                      * Hits when iOS memcpy handles the trailing bytes after the
                      * 8-byte D-store loop completes (660 bytes = 82*8 + 4 bytes
                      * tail; the tail is byte-by-byte). */
-                    else if ((insn & 0xffe00000) == 0x38000000 && (insn & 0x800) == 0)
+                    else if ((insn & 0xffe00000) == 0x38000000 && ((insn >> 10) & 3) != 2)
                     {
                         int rt = insn & 0x1f;
                         uint8_t value = (uint8_t)IOS_STORE_SRC(rt);
                         emulated = ios_alias_write( fault_addr, &value, sizeof(value), &alias_fault, honor_guest_prot );
-                        int idx_mode = (insn >> 10) & 3;
+                        int idx_mode = (insn >> 10) & 3;  // bits 11:10: 00 STUR, 01 post-index, 11 pre-index
                         if (emulated && (idx_mode == 1 || idx_mode == 3))
-                        {
-                            int rn = (insn >> 5) & 0x1f;
-                            int imm9 = (insn >> 12) & 0x1ff;
-                            if (imm9 & 0x100) imm9 |= ~0x1ff;
-                            state.__x[rn] = (uint64_t)((int64_t)state.__x[rn] + imm9);
-                        }
+                            ios_store_imm9_writeback( &state, insn );
                     }
                     /* STRH (immediate, post/pre-index, 16-bit): 0111 1000 00 0imm9 0[10]1 Rn Rt */
-                    else if ((insn & 0xffe00000) == 0x78000000 && (insn & 0x800) == 0)
+                    else if ((insn & 0xffe00000) == 0x78000000 && ((insn >> 10) & 3) != 2)
                     {
                         int rt = insn & 0x1f;
                         uint16_t value = (uint16_t)IOS_STORE_SRC(rt);
                         emulated = ios_alias_write( fault_addr, &value, sizeof(value), &alias_fault, honor_guest_prot );
-                        int idx_mode = (insn >> 10) & 3;
+                        int idx_mode = (insn >> 10) & 3;  // bits 11:10: 00 STUR, 01 post-index, 11 pre-index
                         if (emulated && (idx_mode == 1 || idx_mode == 3))
-                        {
-                            int rn = (insn >> 5) & 0x1f;
-                            int imm9 = (insn >> 12) & 0x1ff;
-                            if (imm9 & 0x100) imm9 |= ~0x1ff;
-                            state.__x[rn] = (uint64_t)((int64_t)state.__x[rn] + imm9);
-                        }
+                            ios_store_imm9_writeback( &state, insn );
                     }
                     /* SIMD/FP STR (immediate, post/pre-index, D-reg = 64-bit):
                      * 11 111 1 00 00 0 imm9 idx Rn Rt   — encoding 0xfc000400 base.
@@ -5086,14 +5081,9 @@ static void *ios_mach_exception_thread( void *arg )
                         {
                             /* Low 64 bits of the 128-bit Q-reg = D-reg. */
                             emulated = ios_alias_write( fault_addr, &neon_state.__v[rt], 8, &alias_fault, honor_guest_prot );
-                            int idx_mode = (insn >> 10) & 3;
+                            int idx_mode = (insn >> 10) & 3;  // bits 11:10: 00 STUR, 01 post-index, 11 pre-index
                             if (emulated && (idx_mode == 1 || idx_mode == 3))
-                            {
-                                int rn = (insn >> 5) & 0x1f;
-                                int imm9 = (insn >> 12) & 0x1ff;
-                                if (imm9 & 0x100) imm9 |= ~0x1ff;
-                                state.__x[rn] = (uint64_t)((int64_t)state.__x[rn] + imm9);
-                            }
+                                ios_store_imm9_writeback( &state, insn );
                         }
                     }
                     /* SIMD/FP STR (immediate, post/pre-index, S-reg = 32-bit):
@@ -5104,14 +5094,9 @@ static void *ios_mach_exception_thread( void *arg )
                         if (have_neon)
                         {
                             emulated = ios_alias_write( fault_addr, &neon_state.__v[rt], 4, &alias_fault, honor_guest_prot );
-                            int idx_mode = (insn >> 10) & 3;
+                            int idx_mode = (insn >> 10) & 3;  // bits 11:10: 00 STUR, 01 post-index, 11 pre-index
                             if (emulated && (idx_mode == 1 || idx_mode == 3))
-                            {
-                                int rn = (insn >> 5) & 0x1f;
-                                int imm9 = (insn >> 12) & 0x1ff;
-                                if (imm9 & 0x100) imm9 |= ~0x1ff;
-                                state.__x[rn] = (uint64_t)((int64_t)state.__x[rn] + imm9);
-                            }
+                                ios_store_imm9_writeback( &state, insn );
                         }
                     }
                     /* SIMD/FP STR (immediate, post/pre-index, Q-reg = 128-bit):
@@ -5122,14 +5107,9 @@ static void *ios_mach_exception_thread( void *arg )
                         if (have_neon)
                         {
                             emulated = ios_alias_write( fault_addr, &neon_state.__v[rt], 16, &alias_fault, honor_guest_prot );
-                            int idx_mode = (insn >> 10) & 3;
+                            int idx_mode = (insn >> 10) & 3;  // bits 11:10: 00 STUR, 01 post-index, 11 pre-index
                             if (emulated && (idx_mode == 1 || idx_mode == 3))
-                            {
-                                int rn = (insn >> 5) & 0x1f;
-                                int imm9 = (insn >> 12) & 0x1ff;
-                                if (imm9 & 0x100) imm9 |= ~0x1ff;
-                                state.__x[rn] = (uint64_t)((int64_t)state.__x[rn] + imm9);
-                            }
+                                ios_store_imm9_writeback( &state, insn );
                         }
                     }
                     /* SIMD/FP STUR (immediate, UNSCALED, Q-reg = 128-bit):
@@ -8549,6 +8529,13 @@ NTSTATUS WINAPI NtSetContextThread( HANDLE handle, const CONTEXT *context )
     DWORD flags = context->ContextFlags & ~CONTEXT_ARM64;
 
     if (self && (flags & CONTEXT_DEBUG_REGISTERS)) self = FALSE;
+#ifdef WINE_IOS
+    {
+        /* ds3-coop [child-suspend]: a child parked at its start (thread_ios.c) */
+        extern BOOL ios_park_set_context( HANDLE handle, const CONTEXT *context );
+        if (!self && ios_park_set_context( handle, context )) return STATUS_SUCCESS;
+    }
+#endif
 
     /* iOS-Madeira diag: companion to [set-ctx] in signal_set_full_context —
      * catch cross-thread PC rewrites into the FEX tail carve that land on
@@ -8705,7 +8692,17 @@ NTSTATUS WINAPI NtGetContextThread( HANDLE handle, CONTEXT *context )
 
     if (!self)
     {
-        NTSTATUS ret = get_thread_context( handle, context, &self, IMAGE_FILE_MACHINE_ARM64 );
+        NTSTATUS ret;
+#ifdef WINE_IOS
+        /* ds3-coop [child-suspend]: a child parked at its start (thread_ios.c) */
+        extern BOOL ios_park_get_context( HANDLE handle, CONTEXT *context );
+        if (ios_park_get_context( handle, context ))
+        {
+            set_context_exception_reporting_flags( &context->ContextFlags, CONTEXT_SERVICE_ACTIVE );
+            return STATUS_SUCCESS;
+        }
+#endif
+        ret = get_thread_context( handle, context, &self, IMAGE_FILE_MACHINE_ARM64 );
         if (!ret && !self && (needed_flags & CONTEXT_CONTROL & ~CONTEXT_ARM64) &&
             (!(context->ContextFlags & CONTEXT_CONTROL & ~CONTEXT_ARM64) || !context->Pc))
             get_context_from_amd64_area( handle, context, needed_flags );

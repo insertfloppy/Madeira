@@ -13,13 +13,27 @@ import Foundation
 // SDK versions first ask Windows to start the "GalaxyCommunication" service, so the
 // prefix gets a do-nothing service of that name (build/gog-galaxy-service).
 // Without a sign-in, or when the port is taken, the game simply runs offline, as a
-// GOG game does without GOG's client. `env.MADEIRA_GOG_GALAXY = 0` turns it off.
+// GOG game does without GOG's client. `env.MADEIRA_GOG_GALAXY = 0` turns it off,
+// in madeira.cfg or in one game's own config.
 // Log tag: [galaxy] (request names and statuses only; never a token or secret).
 
 @MainActor final class GOGGalaxy {
     static let shared = GOGGalaxy()
 
-    static var enabled: Bool { SteamSignIn.flag("MADEIRA_GOG_GALAXY", default: true) }
+    static var enabled: Bool { SteamSignIn.flag("MADEIRA_GOG_GALAXY", default: true) }   // GOG Galaxy's game services (sign-in, achievements, stats, leaderboards) for GOG games, answered by Madeira on 127.0.0.1:9977 while one runs (docs/GOG.md, "Galaxy"); 0 turns them off, in madeira.cfg or in one game's own config
+
+    /// Whether this game's play gets the service: its own config (Game details ›
+    /// This game's config) wins over madeira.cfg. A game's lines are applied only
+    /// after this runs, so they are read here; spaces inside the key are ignored
+    /// ("env. MADEIRA_GOG_GALAXY = 0" counts).
+    static func enabled(for entry: LibraryEntry) -> Bool {
+        let key = "env.MADEIRA_GOG_GALAXY"
+        let own = MadeiraConfig.parse(entry.gameConfigText ?? "")
+        if let value = own.first(where: { $0.key.filter { !$0.isWhitespace } == key })?.value {
+            return value != "0"
+        }
+        return enabled
+    }
 
     /// Where GOG's own client and Heroic's comet put the service's program.
     static let serviceWindowsPath = "C:\\ProgramData\\GOG.com\\Galaxy\\redists\\GalaxyCommunication.exe"
@@ -36,7 +50,12 @@ import Foundation
     /// service for a GOG game whose build has a Galaxy client; stops any earlier one.
     func prepare(_ entry: LibraryEntry) {
         stop()
-        guard Self.enabled, let product = entry.gogProductID, GOGLibrary.shared.signedIn,
+        guard let product = entry.gogProductID else { return }
+        guard Self.enabled(for: entry) else {
+            GOGLog.event("[galaxy] off for this play (env.MADEIRA_GOG_GALAXY=0)")
+            return
+        }
+        guard GOGLibrary.shared.signedIn,
               let client = GOGLibrary.shared.installed[product]?.galaxy else { return }
         registerService()
         let log = GalaxyLogger { line in GOGLog.event(line) }

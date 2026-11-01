@@ -51,7 +51,11 @@ Removing an entry never removes the game's files or saves.
   **Steam** (the Steam games being downloaded and the games Steam has
   installed, with their count; a **Sign in to Steam** card when signed out),
   its **Not installed** group (the account's other games, with their count),
-  then **Other games** (the games you added; **+** in the navigation bar adds one). Tapping
+  then **FINAL FANTASY XIV** (its recognized entries; with none, an install
+  card that downloads the game from Square Enix to this device or an
+  external drive, `docs/FFXIV_PATCHING.md`;
+  `env.MADEIRA_FFXIV = 0` turns the section off and puts its entries back
+  in Other games), then **Other games** (the games you added; **+** in the navigation bar adds one). Tapping
   **Steam** or **Other games** collapses it; **Not installed** folds on its
   own, open by default; each state is remembered. Search, the layout and, for
   installed games, Sort by apply to every section. Pull down to read the
@@ -126,11 +130,11 @@ that shows web pages (imports mshtml or ieframe) before Wine Gecko is downloaded
 (an info line with Get Wine Gecko), a Steam minimum
 memory above the device's (from the public store, kept 30 days), and less than
 2 GB free. A game device-tested on Madeira (`KnownGames` in `LaunchCheck.swift`:
-Counter-Strike 2, The Escapists 2, Terraria, Stardew Valley, Slay the Spire 2, Modern Warfare 2 (2009) campaign, Project Zomboid, Megabonk, Fallout: New Vegas) gets
+Counter-Strike 2, The Escapists 2, Terraria, Stardew Valley, Slay the Spire 2, Modern Warfare 2 (2009) campaign, Project Zomboid, Megabonk, Fallout: New Vegas, Batman: Arkham City, Black Ops through Steam) gets
 a green "Tested: runs on Madeira" line naming the device, iOS and build it was
 tested on (each game keeps a list of tests, so more devices can be added; a
 device with less memory than every tested one is told so), and a
-**Tested** pill in the library; Counter-Strike 2, The Escapists 2, Slay the Spire 2 and Project Zomboid also have
+**Tested** pill in the library; Counter-Strike 2, The Escapists 2, Slay the Spire 2, Project Zomboid and Black Ops also have
 recommended settings (`GameRecommendations.swift`), so they get their tested
 config on first sight. With nothing found it shows one green line. Play stays available: a
 red line asks "Play anyway?" once per game and set of problems. Each read is
@@ -313,6 +317,16 @@ choice, **One-time installs**, updates, **Repair
 installed files**, App ID, free space and **Uninstall**; its **Executable**
 section shows the install folder, and it has no **Remove from library** (the
 entry goes with **Uninstall**).
+
+A FINAL FANTASY XIV entry (one of the game's own programs, beside its version
+files; `docs/SQUARE_ENIX_SIGNIN.md`) adds a **Square Enix** section under Play:
+**License** (Windows or Mac, chosen before the first Play), **Free trial
+account** and **Remember sign-in** (the Square Enix ID and password in the
+Keychain). Play opens a sign-in sheet first, and on success starts
+`game/ffxiv_dx11.exe` with that launch's session, whichever of the game's
+programs the entry names. Under the Windows license that launch hides Wine's
+`wine_get_host_version` from the game and always starts in the Wine desktop,
+since the game's Windows version restarts itself.
 
 ## Sessions
 

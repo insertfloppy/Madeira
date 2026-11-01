@@ -447,6 +447,8 @@ struct GOGEntrySection: View {
     var uninstalled: () -> Void
     @ObservedObject private var gog = GOGLibrary.shared
     @State private var confirmUninstall = false
+    /// The programs the game can start with (GOGLibrary.programChoices), read when the page opens.
+    @State private var programs: [GOGLibrary.ProgramChoice] = []
 
     var body: some View {
         let id = entry.gogProductID ?? ""
@@ -477,6 +479,13 @@ struct GOGEntrySection: View {
                 LabeledContent("Version", value: record.versionName.isEmpty ? record.buildID : record.versionName)
                 LabeledContent("Language", value: record.language == "*" ? "Default" : record.language)
                 if !record.dlc.isEmpty { LabeledContent("DLC installed", value: "\(record.dlc.count)") }
+                if programs.count > 1, download == nil {
+                    Picker("Program", selection: Binding(get: { record.launchExe.lowercased() }, set: { pick($0, id: id) })) {
+                        ForEach(programs) { Text($0.name).tag($0.id) }
+                    }
+                    Text("Which program Play starts. Pick the game itself when its launcher closes without starting it.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 if record.galaxy != nil, GOGGalaxy.enabled {
                     LabeledContent("Achievements and stats", value: gog.signedIn ? "On while it runs" : "Sign in to GOG")
                 }
@@ -489,15 +498,36 @@ struct GOGEntrySection: View {
         } header: {
             Text("GOG")
         } footer: {
-            Text("The game starts its own program in Wine, as GOG Galaxy would. There is no GOG Galaxy in Madeira, so Galaxy features such as achievements and cloud saves are not available.")
+            Text("The game starts its own program in Wine, as GOG Galaxy would. Madeira stands in for GOG Galaxy while the game runs, so a game that uses Galaxy gets its achievements and stats. Galaxy cloud saves are not available yet.")
         }
-        .task(id: id) { await gog.checkForUpdate(id) }
+        .task(id: id) {
+            if let record = gog.installed[id] {
+                let folder = GOGLibrary.drive.appendingPathComponent(record.folder, isDirectory: true)
+                programs = await Task.detached(priority: .userInitiated) { GOGLibrary.programChoices(folder: folder, product: id) }.value
+            }
+            await gog.checkForUpdate(id)
+        }
         .confirmationDialog("Uninstall \(entry.title)? Its downloaded files are deleted from this device. Saves stored elsewhere are kept.",
                             isPresented: $confirmUninstall, titleVisibility: .visible) {
             Button("Uninstall", role: .destructive) {
                 gog.uninstall(id)
                 uninstalled()
             }
+        }
+    }
+
+    /// The page's entry follows the chosen program; arguments and working folder follow
+    /// GOG's play task unless the player changed them.
+    private func pick(_ key: String, id: String) {
+        guard let previous = gog.installed[id], let choice = programs.first(where: { $0.id == key }) else { return }
+        gog.chooseProgram(id, choice)
+        guard let updated = gog.installed[id] else { return }
+        entry.relativePath = updated.programPath
+        if entry.arguments == previous.arguments { entry.arguments = updated.arguments }
+        if entry.workingDirectory == previous.workingWindowsPath { entry.workingDirectory = updated.workingWindowsPath }
+        if let inspected = try? LibraryModel.inspect(GOGLibrary.drive.appendingPathComponent(updated.programPath)) {
+            entry.bits = inspected.bits
+            entry.graphicsAPI = inspected.graphicsAPI ?? entry.graphicsAPI
         }
     }
 }

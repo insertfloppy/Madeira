@@ -681,6 +681,40 @@
         }
       }
     },
+    "Achievements and stats": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erfolge und Statistiken"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logros y estadísticas"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "도전 과제 및 통계"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conquistas e estatísticas"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Достижения и статистика"
+          }
+        }
+      }
+    },
     "Active": {
       "localizations": {
         "de": {
@@ -1221,6 +1255,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Дополнительно"
+          }
+        }
+      }
+    },
+    "All of these are installed.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle davon werden installiert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se instalan todas."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모두 설치됩니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todas serão instaladas."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устанавливается всё это."
           }
         }
       }
@@ -1833,6 +1901,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Автоматически использует StikDebug, если он установлен. После сбоя Madeira не меняет способ втихую."
+          }
+        }
+      }
+    },
+    "Back": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zurück"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Atrás"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "뒤로"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voltar"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Назад"
           }
         }
       }
@@ -2925,36 +3027,138 @@
         }
       }
     },
-    "Choose a mod's .zip or its unpacked folder in Files (from Nexus Mods, Thunderstore and other sites). Madeira puts the files where the game expects them, and Remove puts the game back as it was. For a .7z or .rar, unpack it first.": {
+    "Choose a Folder": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wähle die .zip-Datei eines Mods oder seinen entpackten Ordner in Dateien (von Nexus Mods, Thunderstore und anderen Seiten). Madeira legt die Dateien dort ab, wo das Spiel sie erwartet, und Entfernen stellt das Spiel wieder her, wie es war. Eine .7z- oder .rar-Datei musst du zuerst entpacken."
+            "value": "Ordner auswählen"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Elige el .zip de un mod o su carpeta descomprimida en Archivos (de Nexus Mods, Thunderstore y otros sitios). Madeira pone los archivos donde el juego los espera, y Quitar deja el juego como estaba. Si es .7z o .rar, descomprímelo primero."
+            "value": "Elegir una carpeta"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "파일 앱에서 모드의 .zip 또는 압축을 푼 폴더를 선택하세요(Nexus Mods, Thunderstore 및 기타 사이트). Madeira가 게임이 기대하는 위치에 파일을 넣고, 제거하면 게임이 원래 상태로 돌아갑니다. .7z나 .rar는 먼저 압축을 푸세요."
+            "value": "폴더 선택"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Escolha o .zip de um mod ou a pasta descompactada dele no Arquivos (do Nexus Mods, Thunderstore e outros sites). O Madeira coloca os arquivos onde o jogo espera, e Remover deixa o jogo como estava. Se for .7z ou .rar, descompacte primeiro."
+            "value": "Escolher uma pasta"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Выберите .zip мода или его распакованную папку в Файлах (с Nexus Mods, Thunderstore и других сайтов). Madeira положит файлы туда, где их ждёт игра, а «Удалить» вернёт игру как было. Архив .7z или .rar сначала распакуйте."
+            "value": "Выбрать папку"
+          }
+        }
+      }
+    },
+    "Choose a mod's .zip, .7z or .rar, or its unpacked folder, from Files (Nexus Mods, Thunderstore and other sites). Madeira puts the files where the game expects them, asks for the options of a mod with an installer, turns on its plugins, and Remove puts the game back as it was.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle die .zip-, .7z- oder .rar-Datei eines Mods oder seinen entpackten Ordner in Dateien (Nexus Mods, Thunderstore und andere Seiten). Madeira legt die Dateien dorthin, wo das Spiel sie erwartet, fragt bei einem Mod mit Installer nach den Optionen, aktiviert seine Plugins, und Entfernen stellt das Spiel wieder her, wie es war."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige el .zip, .7z o .rar de un mod, o su carpeta descomprimida, en Archivos (Nexus Mods, Thunderstore y otros sitios). Madeira pone los archivos donde el juego los espera, pregunta las opciones de un mod con instalador, activa sus plugins, y Quitar deja el juego como estaba."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 앱에서 모드의 .zip, .7z, .rar 파일이나 압축을 푼 폴더를 선택하세요(Nexus Mods, Thunderstore 및 기타 사이트). Madeira가 게임이 기대하는 위치에 파일을 넣고, 설치 프로그램이 있는 모드는 옵션을 묻고, 플러그인을 켭니다. 제거하면 게임이 원래 상태로 돌아갑니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha o .zip, .7z ou .rar de um mod, ou a pasta descompactada, no Arquivos (Nexus Mods, Thunderstore e outros sites). O Madeira coloca os arquivos onde o jogo espera, pergunta as opções de um mod com instalador, ativa os plugins dele, e Remover deixa o jogo como estava."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите .zip, .7z или .rar мода либо его распакованную папку в «Файлах» (Nexus Mods, Thunderstore и другие сайты). Madeira кладёт файлы туда, где их ждёт игра, спрашивает параметры мода с установщиком, включает его плагины, а «Удалить» возвращает игру в прежнее состояние."
+          }
+        }
+      }
+    },
+    "Choose any.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle beliebig viele."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige las que quieras."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원하는 만큼 선택하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha quantas quiser."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите любые."
+          }
+        }
+      }
+    },
+    "Choose at least one.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle mindestens eine."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige al menos una."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "하나 이상 선택하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha pelo menos uma."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите хотя бы один вариант."
           }
         }
       }
@@ -2989,6 +3193,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "Выбрать обложку"
+          }
+        }
+      }
+    },
+    "Choose one or none.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle eine oder keine."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige una o ninguna."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "하나를 선택하거나 선택하지 마세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha uma ou nenhuma."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите один вариант или ни одного."
+          }
+        }
+      }
+    },
+    "Choose one.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle eine Option."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige una."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "하나를 선택하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha uma."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите один вариант."
           }
         }
       }
@@ -5815,40 +6087,6 @@
         }
       }
     },
-    "Final Fantasy XIV": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Final Fantasy XIV"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Final Fantasy XIV"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Final Fantasy XIV"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Final Fantasy XIV"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Final Fantasy XIV"
-          }
-        }
-      }
-    },
     "Find a game": {
       "localizations": {
         "de": {
@@ -7141,6 +7379,74 @@
         }
       }
     },
+    "Get Help from Claude": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hilfe von Claude holen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pedir ayuda a Claude"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude에게 도움 받기"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pedir ajuda ao Claude"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Помощь от Claude"
+          }
+        }
+      }
+    },
+    "Get Help from Claude shares a guide to known fixes, the last logs and madeira.cfg. For one game's config too, use the button on its Game details page.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hilfe von Claude holen teilt eine Anleitung zu bekannten Lösungen, die letzten Protokolle und madeira.cfg. Für die Konfiguration eines Spiels nutze die Taste auf dessen Spieldetails-Seite."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pedir ayuda a Claude comparte una guía de soluciones conocidas, los últimos registros y madeira.cfg. Para incluir también la configuración de un juego, usa el botón de su página de detalles."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude에게 도움 받기는 알려진 해결 방법 안내, 최근 로그와 madeira.cfg를 공유합니다. 게임 하나의 설정도 함께 보내려면 그 게임의 게임 세부 정보 페이지에 있는 버튼을 사용하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pedir ajuda ao Claude compartilha um guia de correções conhecidas, os últimos registros e o madeira.cfg. Para incluir também a configuração de um jogo, use o botão na página de detalhes dele."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«Помощь от Claude» отправляет руководство по известным исправлениям, последние журналы и madeira.cfg. Чтобы добавить настройки одной игры, нажмите эту кнопку на странице сведений об игре."
+          }
+        }
+      }
+    },
     "Graphics": {
       "localizations": {
         "de": {
@@ -7987,6 +8293,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Установленные DLC"
+          }
+        }
+      }
+    },
+    "Installed before Madeira added GOG's redistributables. Repair installed files adds them.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installiert, bevor Madeira GOGs Laufzeitkomponenten hinzugefügt hat. „Installierte Dateien reparieren“ fügt sie hinzu."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalado antes de que Madeira añadiera los redistribuibles de GOG. Reparar archivos instalados los añade."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Madeira가 GOG 재배포 패키지를 추가하기 전에 설치되었습니다. 설치된 파일 복구를 하면 추가됩니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalado antes de o Madeira adicionar os redistribuíveis do GOG. Reparar arquivos instalados os adiciona."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Установлено до того, как Madeira добавила распространяемые компоненты GOG. «Восстановить установленные файлы» добавит их."
           }
         }
       }
@@ -10167,40 +10507,6 @@
         }
       }
     },
-    "Madeira signs in to Square Enix the way the official launcher does and starts the game. Updates still install through the Final Fantasy XIV launcher (Settings › PC game launchers). Steam accounts are not supported yet.": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Madeira meldet sich bei Square Enix so an wie der offizielle Launcher und startet das Spiel. Updates werden weiterhin über den Final Fantasy XIV-Launcher installiert (Einstellungen › PC-Spiele-Launcher). Steam-Konten werden noch nicht unterstützt."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Madeira inicia sesión en Square Enix como lo hace el launcher oficial e inicia el juego. Las actualizaciones se siguen instalando con el launcher de Final Fantasy XIV (Ajustes › Launchers de juegos de PC). Las cuentas de Steam aún no son compatibles."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Madeira는 공식 런처와 같은 방식으로 Square Enix에 로그인하고 게임을 시작합니다. 업데이트는 여전히 Final Fantasy XIV 런처(설정 › PC 게임 런처)로 설치됩니다. Steam 계정은 아직 지원하지 않습니다."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "O Madeira entra na Square Enix como o launcher oficial faz e inicia o jogo. As atualizações continuam sendo instaladas pelo launcher de Final Fantasy XIV (Ajustes › Launchers de jogos de PC). Contas Steam ainda não são suportadas."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Madeira входит в Square Enix так же, как официальный лаунчер, и запускает игру. Обновления по-прежнему ставятся через лаунчер Final Fantasy XIV (Настройки › Лаунчеры игр для ПК). Учётные записи Steam пока не поддерживаются."
-          }
-        }
-      }
-    },
     "Madeira signs in with an API key you make on itch.io, kept in this device's Keychain for this device only. Signing out removes it; installed games stay and still play. You can also delete the key on itch.io at any time.": {
       "localizations": {
         "de": {
@@ -11187,6 +11493,40 @@
         }
       }
     },
+    "Next": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weiter"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Siguiente"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avançar"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Далее"
+          }
+        }
+      }
+    },
     "No": {
       "localizations": {
         "de": {
@@ -12003,6 +12343,40 @@
         }
       }
     },
+    "Not usable with your game": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit deinem Spiel nicht nutzbar"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se puede usar con tu juego"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 게임에서는 사용할 수 없음"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não pode ser usado com o seu jogo"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не подходит для вашей игры"
+          }
+        }
+      }
+    },
     "Nothing is changed until you choose which to keep.": {
       "localizations": {
         "de": {
@@ -12373,40 +12747,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Одноразовые установки"
-          }
-        }
-      }
-    },
-    "One-time password (if you use one)": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Einmalpasswort (falls du eins nutzt)"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Contraseña de un solo uso (si usas una)"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "일회용 비밀번호(사용하는 경우)"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Senha de uso único (se você usa)"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Одноразовый пароль (если используете)"
           }
         }
       }
@@ -13737,6 +14077,40 @@
         }
       }
     },
+    "Recommended": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empfohlen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recomendado"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "권장"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recomendado"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рекомендуется"
+          }
+        }
+      }
+    },
     "Record as done": {
       "localizations": {
         "de": {
@@ -14243,40 +14617,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Перезагрузить"
-          }
-        }
-      }
-    },
-    "Remember password on this device": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Passwort auf diesem Gerät merken"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recordar la contraseña en este dispositivo"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이 기기에 비밀번호 기억"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lembrar a senha neste dispositivo"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Запомнить пароль на этом устройстве"
           }
         }
       }
@@ -19415,36 +19755,36 @@
         }
       }
     },
-    "The game starts its own program in Wine, as GOG Galaxy would. There is no GOG Galaxy in Madeira, so Galaxy features such as achievements and cloud saves are not available.": {
+    "The game starts its own program in Wine, as GOG Galaxy would. Madeira stands in for GOG Galaxy while the game runs, so a game that uses Galaxy gets its achievements and stats. Galaxy cloud saves are not available yet.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Das Spiel startet sein eigenes Programm in Wine, wie es GOG Galaxy tun würde. In Madeira gibt es kein GOG Galaxy, daher sind Galaxy-Funktionen wie Erfolge und Cloud-Spielstände nicht verfügbar."
+            "value": "Das Spiel startet sein eigenes Programm in Wine, wie es GOG Galaxy tun würde. Madeira übernimmt die Rolle von GOG Galaxy, solange das Spiel läuft, daher erhält ein Spiel, das Galaxy nutzt, seine Erfolge und Statistiken. Galaxy-Cloud-Spielstände sind noch nicht verfügbar."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "El juego inicia su propio programa en Wine, como lo haría GOG Galaxy. No hay GOG Galaxy en Madeira, así que funciones de Galaxy como logros y partidas en la nube no están disponibles."
+            "value": "El juego inicia su propio programa en Wine, como lo haría GOG Galaxy. Madeira hace las veces de GOG Galaxy mientras el juego se ejecuta, así que un juego que usa Galaxy obtiene sus logros y estadísticas. Las partidas en la nube de Galaxy aún no están disponibles."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "게임은 GOG Galaxy처럼 Wine에서 자체 프로그램을 시작합니다. Madeira에는 GOG Galaxy가 없으므로 도전 과제, 클라우드 저장 같은 Galaxy 기능은 사용할 수 없습니다."
+            "value": "게임은 GOG Galaxy처럼 Wine에서 자체 프로그램을 시작합니다. 게임이 실행되는 동안 Madeira가 GOG Galaxy 역할을 하므로, Galaxy를 사용하는 게임은 도전 과제와 통계를 받을 수 있습니다. Galaxy 클라우드 저장은 아직 사용할 수 없습니다."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "O jogo inicia o próprio programa no Wine, como o GOG Galaxy faria. Não existe GOG Galaxy no Madeira, então recursos do Galaxy como conquistas e saves na nuvem não estão disponíveis."
+            "value": "O jogo inicia o próprio programa no Wine, como o GOG Galaxy faria. O Madeira faz o papel do GOG Galaxy enquanto o jogo roda, então um jogo que usa o Galaxy recebe suas conquistas e estatísticas. Saves na nuvem do Galaxy ainda não estão disponíveis."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Игра запускает собственную программу в Wine, как это сделал бы GOG Galaxy. GOG Galaxy в Madeira нет, поэтому функции Galaxy, такие как достижения и облачные сохранения, недоступны."
+            "value": "Игра запускает собственную программу в Wine, как это сделал бы GOG Galaxy. Пока игра запущена, Madeira заменяет GOG Galaxy, поэтому игра, использующая Galaxy, получает свои достижения и статистику. Облачные сохранения Galaxy пока недоступны."
           }
         }
       }
@@ -20159,6 +20499,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Этот ключ пуст."
+          }
+        }
+      }
+    },
+    "This mod's installer has no options to choose. Install puts in its required files.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Installer dieses Mods hat keine Optionen zur Auswahl. Installieren legt seine benötigten Dateien an."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El instalador de este mod no tiene opciones que elegir. Instalar pone sus archivos necesarios."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 모드의 설치 프로그램에는 선택할 옵션이 없습니다. 설치하면 필수 파일이 들어갑니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O instalador deste mod não tem opções para escolher. Instalar coloca os arquivos necessários."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "У установщика этого мода нет параметров для выбора. «Установить» добавит его обязательные файлы."
           }
         }
       }
@@ -21791,6 +22165,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Какую копию DLL Wine загружает для этой игры: собственную копию игры (из её папки, например исправление d3d9.dll) или копию Wine. Применится при следующем запуске игры. Смахните влево, чтобы удалить. Сохраняется в конфигурации этой игры как env.WINEDLLOVERRIDES."
+          }
+        }
+      }
+    },
+    "Which program Play starts. Pick the game itself when its launcher closes without starting it.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Welches Programm „Spielen“ startet. Wähle das Spiel selbst, wenn sich sein Launcher schließt, ohne es zu starten."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qué programa inicia Jugar. Elige el propio juego cuando su lanzador se cierra sin iniciarlo."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "플레이가 시작할 프로그램입니다. 런처가 게임을 시작하지 않고 닫히면 게임 자체를 선택하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qual programa o Jogar inicia. Escolha o próprio jogo quando o inicializador fechar sem iniciá-lo."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Какую программу запускает «Играть». Выберите саму игру, если её лаунчер закрывается, не запустив её."
           }
         }
       }

@@ -187,7 +187,8 @@ final class LauncherSupportModel: ObservableObject {
     }
 
     /// Final Fantasy XIV's game beside the launcher's boot folder, once it is installed:
-    /// its Play signs in through Madeira (FFXIVLaunch.swift).
+    /// its Play signs in through Madeira (SquareEnixSignIn.swift; Game details asks
+    /// for the account first).
     private func addFFXIVGame(boot: URL) {
         let game = boot.deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("game", isDirectory: true).appendingPathComponent("ffxiv_dx11.exe")

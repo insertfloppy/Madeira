@@ -10315,12 +10315,31 @@ static struct ios_wow_window *ios_wow_slot_at_base( ULONG_PTR base )
  * ios_jit_current_peb() cannot resolve the PEB.  `owner` is the owning
  * process's own boot thread, so the fallback can only resolve to that
  * process's window. */
+/* madeira-bcd [child-64-boot]: set by wine_ios_child_main on a 64-bit child's
+ * boot thread from entry until its own TEB is published. Build 63, 2026-11-01
+ * (StarCraft started by 32-bit Battle.net.exe): the boot thread of x64
+ * StarCraft.exe resolved the PARENT's guest window (0x7600000000), so its TEB
+ * came out of that window's block, its PEB was placed under the 4 GB guest
+ * ceiling (ml959 LIMIT-VIOLATED), the child counted as WoW64 and loaded
+ * wow64.dll, and ntdll faulted on a NULL read 2000 times until the redelivery
+ * guard killed the whole app. Two earlier runs of the same launch resolved no
+ * window and StarCraft started. A 64-bit process never has a window, so
+ * during that gap nothing may resolve one, whatever the thread's inherited
+ * TSD or a reused pthread_t says. */
+static __thread int ios_child_boot_no_window;
+
+void ios_wow_child_boot_no_window( int on )
+{
+    ios_child_boot_no_window = on;
+}
+
 static struct ios_wow_window *ios_wow_slot_current(void)
 {
     struct ios_wow_window *slot;
     unsigned i, n = ios_wow_window_count;
 
     if (!n) return NULL;   /* no window in this session: nothing to resolve */
+    if (ios_child_boot_no_window) return NULL;
     if ((slot = ios_wow_slot_for_peb( ios_jit_current_peb() ))) return slot;
     for (i = 0; i < n; i++)
         if (ios_wow_windows[i].base && !ios_wow_windows[i].leaked &&
@@ -11855,6 +11874,7 @@ ULONG ios_wow_guest_addr( const void *host ) { return PtrToUlong( host ); }
 void ios_wow_translate_limits( ULONG_PTR *l, ULONG_PTR *h ) { }
 NTSTATUS ios_wow_window_reserve(void) { return STATUS_NOT_SUPPORTED; }
 void ios_wow_window_bind( void *peb_id ) { }
+void ios_wow_child_boot_no_window( int on ) { }
 void ios_wow_window_release( void *peb_id ) { }
 void ios_wow_window_release_current(void) { }
 void ios_wow_window_retire_current(void) { }
@@ -14916,28 +14936,50 @@ static NTSTATUS get_vprot_flags( DWORD protect, unsigned int *vprot, BOOL image 
  * but names live in the image's read-only .rdata so they're stable. */
 const char *ios_pe_module_name( const void *image_base, size_t image_size )
 {
-    const unsigned char *b = image_base;
-    uint32_t lfanew, exp_rva, name_rva;
-    const unsigned char *pe;
+    /* madeira-bcd [fault-deadlock]: every read is a checked Mach read. This runs
+     * under virtual_mutex (mprotect_exec's image-reload log line), and the
+     * mapping it names can be one whose pages are not readable yet: build 63
+     * (2026-11-01) StarCraft's ClientSdk.dll unmapped itself and mapped a section
+     * at the same base; the export-directory read here faulted on the new view,
+     * the Mach handler waited for virtual_mutex held by this very thread, and the
+     * whole session froze. A name is diagnostics only: "?" is always acceptable. */
+    uintptr_t b = (uintptr_t)image_base;
+    uint32_t lfanew = 0, exp_rva = 0, name_rva = 0;
+    uint16_t magic = 0;
+    unsigned char mz[2] = { 0, 0 }, pe[2] = { 0, 0 };
+    mach_vm_size_t got;
+    size_t cap, i;
 
+#define IOS_PE_READ(addr, dst, len) \
+    (got = 0, mach_vm_read_overwrite( mach_task_self(), (mach_vm_address_t)(addr), (len), \
+                                      (mach_vm_address_t)(dst), &got ) == KERN_SUCCESS && got == (len))
     if (!b || image_size < 0x100) return "?";
-    if (b[0] != 'M' || b[1] != 'Z') return "?";
-    lfanew = *(const uint32_t *)(b + 0x3c);
-    if ((size_t)lfanew + 0x90 > image_size) return "?";
-    pe = b + lfanew;
-    if (pe[0] != 'P' || pe[1] != 'E') return "?";
-    if (*(const uint16_t *)(pe + 0x18) != 0x20b) return "?";   /* PE32+ only */
-    exp_rva = *(const uint32_t *)(pe + 0x88);                  /* DataDir[0] Export VA */
+    if (!IOS_PE_READ( b, mz, 2 ) || mz[0] != 'M' || mz[1] != 'Z') return "?";
+    if (!IOS_PE_READ( b + 0x3c, &lfanew, 4 ) || (size_t)lfanew + 0x90 > image_size) return "?";
+    if (!IOS_PE_READ( b + lfanew, pe, 2 ) || pe[0] != 'P' || pe[1] != 'E') return "?";
+    if (!IOS_PE_READ( b + lfanew + 0x18, &magic, 2 ) || magic != 0x20b) return "?";   /* PE32+ only */
+    if (!IOS_PE_READ( b + lfanew + 0x88, &exp_rva, 4 )) return "?";                   /* DataDir[0] Export VA */
     if (!exp_rva || (size_t)exp_rva + 0x10 > image_size) return "?";
-    name_rva = *(const uint32_t *)(b + exp_rva + 0x0c);        /* IMAGE_EXPORT_DIRECTORY.Name */
+    if (!IOS_PE_READ( b + exp_rva + 0x0c, &name_rva, 4 )) return "?";                 /* IMAGE_EXPORT_DIRECTORY.Name */
     if (!name_rva || (size_t)name_rva + 1 > image_size) return "?";
-    /* Ensure NUL within the image so the %s can't run off the mapping. */
+    cap = image_size - name_rva;
+    if (cap > 64) cap = 64;
+    /* byte by byte: the name may end right before an unreadable page. Once every
+     * byte up to the NUL read back, the name is returned in place, as before
+     * (callers keep the pointer across further calls). */
     {
-        size_t i, cap = image_size - name_rva;
-        if (cap > 64) cap = 64;
-        for (i = 0; i < cap; i++) if (b[name_rva + i] == 0) return (const char *)(b + name_rva);
-        return "?";
+        char buf[64];
+        uintptr_t n0 = b + name_rva;
+        size_t first = 0x4000 - (n0 & 0x3fff);   /* bytes left on the name's 16 KB page */
+
+        if (first > cap) first = cap;
+        if (!IOS_PE_READ( n0, buf, first )) return "?";
+        if (first < cap && !memchr( buf, 0, first ) && !IOS_PE_READ( n0 + first, buf + first, cap - first ))
+            return "?";
+        for (i = 0; i < cap; i++) if (!buf[i]) return (const char *)n0;
     }
+#undef IOS_PE_READ
+    return "?";
 }
 
 
@@ -26830,6 +26872,95 @@ void virtual_free_teb( TEB *teb )
 }
 
 
+/* [ea-thread-reap]: a launcher's redistributable worker thread left prev_teb
+ * pointing at a TEB in its window. The window was torn down and the next
+ * process reused that exact TEB for a new thread. The unchecked self-join
+ * then released the new thread's live kernel stack: unregister_view+4
+ * faulted writing its prologue, while holding virtual_mutex.
+ *
+ * Snapshot the native and Windows thread identities while the TEB exists.
+ * A pending pointer is never dereferenced until found in the locked live
+ * TEB list. Join outside virtual_mutex, then revalidate under that mutex:
+ * the old window may have been replaced while join was in progress.
+ * Keep the mutex through the free, so teardown/reuse cannot intervene.
+ * It is recursive (virtual_init), as required by the existing alloc path.
+ * ml2290: called for every session (exit_thread); env.MADEIRA_THREAD_REAP_CHECKED=0
+ * without MADEIRA_EA_CEF=1 keeps the old handoff. A stale/unjoinable entry is
+ * discarded, never freed by guess.
+ */
+struct ios_ea_retired_thread
+{
+    TEB *teb;
+    CLIENT_ID client;
+    pthread_t pthread_id;
+};
+
+static struct ios_ea_retired_thread ios_ea_pending_thread;
+
+/* virtual_mutex held; do not read the possibly unmapped retired->teb. */
+static int ios_ea_retired_thread_matches( const struct ios_ea_retired_thread *retired )
+{
+    struct ntdll_thread_data *data;
+
+    LIST_FOR_EACH_ENTRY( data, &teb_list, struct ntdll_thread_data, entry )
+    {
+        TEB *teb = CONTAINING_RECORD( data, TEB, GdiTebBatch );
+        if (teb != retired->teb) continue;
+        return teb->ClientId.UniqueProcess == retired->client.UniqueProcess &&
+               teb->ClientId.UniqueThread == retired->client.UniqueThread &&
+               data->pthread_id && pthread_equal( data->pthread_id, retired->pthread_id );
+    }
+    return 0;
+}
+
+void ios_ea_reap_exited_thread( TEB *current )
+{
+    struct ntdll_thread_data *data, *owned = NULL;
+    struct ios_ea_retired_thread retired;
+    sigset_t sigset;
+    int eligible, joined;
+
+    server_enter_uninterrupted_section( &virtual_mutex, &sigset );
+    /* A laggard of a replaced window can reach here on its native stack.
+     * Validate even the caller through list membership before dereferencing
+     * its TEB, and never enqueue another thread at a recycled address. */
+    LIST_FOR_EACH_ENTRY( data, &teb_list, struct ntdll_thread_data, entry )
+    {
+        if (CONTAINING_RECORD( data, TEB, GdiTebBatch ) != current) continue;
+        if (data->pthread_id && pthread_equal( data->pthread_id, pthread_self() )) owned = data;
+        break;
+    }
+    if (!owned)
+    {
+        server_leave_uninterrupted_section( &virtual_mutex, &sigset );
+        return;
+    }
+    retired = ios_ea_pending_thread;
+    ios_ea_pending_thread.teb = current;
+    ios_ea_pending_thread.client = current->ClientId;
+    ios_ea_pending_thread.pthread_id = owned->pthread_id;
+    eligible = retired.teb && retired.teb != current && retired.pthread_id &&
+               !pthread_equal( retired.pthread_id, pthread_self() ) && ios_ea_retired_thread_matches( &retired );
+    server_leave_uninterrupted_section( &virtual_mutex, &sigset );
+
+    if (!retired.teb) return;
+    joined = eligible ? pthread_join( retired.pthread_id, NULL ) : -1;
+
+    server_enter_uninterrupted_section( &virtual_mutex, &sigset );
+    if (!joined && ios_ea_retired_thread_matches( &retired ))
+        virtual_free_teb( retired.teb );
+    else
+    {
+        static unsigned int logs;
+        if (logs++ < 16)
+            dprintf( 2, "[ea-thread-reap] stale/unjoinable handoff skipped: teb=%p tid=%04x join=%d; "
+                        "no stacks released\n", retired.teb,
+                     (unsigned)(ULONG_PTR)retired.client.UniqueThread, joined );
+    }
+    server_leave_uninterrupted_section( &virtual_mutex, &sigset );
+}
+
+
 /* LDT support */
 
 #if defined(__i386__) || defined(__x86_64__)
@@ -27996,7 +28127,51 @@ NTSTATUS ios_virtual_handle_fault_for_thread( EXCEPTION_RECORD *rec, TEB *teb )
     char *page = ROUND_ADDR( addr, host_page_mask );
     BYTE vprot;
 
-    mutex_lock( &virtual_mutex );
+    /* madeira-bcd [fault-deadlock]: this runs on the Mach exception thread, not on
+     * the faulting thread. If the faulting thread itself holds virtual_mutex (a
+     * fault inside NtMapViewOfSection, NtProtectVirtualMemory, ...), a blocking
+     * lock here waits forever and every other thread of the session queues behind
+     * it: build 63, 2026-11-01, StarCraft's ClientSdk.dll re-mapping itself froze
+     * StarCraft, Battle.net and the whole session ("everything paused"), with the
+     * exception thread parked in this function and 30 threads in
+     * server_enter_uninterrupted_section. Wait up to 2 s (a long map or protect on
+     * another thread finishes well within that), then report the fault without
+     * servicing it, naming the host pc and the address, instead of freezing. */
+    if (pthread_mutex_trylock( &virtual_mutex ))
+    {
+        /* back off from 20 us to 1 ms: a fault that merely meets a busy lock
+         * (guard pages, write watches in 32-bit games) resumes within tens of
+         * microseconds of the lock freeing, not a whole millisecond later */
+        unsigned int waited = 0, step = 20;
+        int locked = 0;
+
+        while (waited < 2000000)
+        {
+            usleep( step );
+            waited += step;
+            if (!pthread_mutex_trylock( &virtual_mutex )) { locked = 1; break; }
+            if (step < 1000) step = step * 2 > 1000 ? 1000 : step * 2;
+        }
+        if (!locked)
+        {
+            static int deadlock_logs;
+            if (deadlock_logs++ < 16)
+            {
+                Dl_info di;
+                void *pc = rec->ExceptionAddress;
+                int named = dladdr( pc, &di ) && di.dli_fbase;
+
+                dprintf( 2, "[fault-deadlock] virtual_mutex still held after 2 s while a fault at pc=%p "
+                            "(%s+0x%lx, image+0x%lx) addr=%p %s waits for it -- most likely the faulting "
+                            "thread holds it; NOT servicing, so the session does not freeze\n",
+                         pc, named && di.dli_sname ? di.dli_sname : "?",
+                         named && di.dli_saddr ? (unsigned long)((char *)pc - (char *)di.dli_saddr) : 0ul,
+                         named ? (unsigned long)((char *)pc - (char *)di.dli_fbase) : 0ul,
+                         addr, err == EXCEPTION_WRITE_FAULT ? "write" : err == EXCEPTION_EXECUTE_FAULT ? "exec" : "read" );
+            }
+            return STATUS_ACCESS_VIOLATION;
+        }
+    }
     vprot = get_host_page_vprot( page );
 
     if (err == EXCEPTION_READ_FAULT && (get_unix_prot( vprot ) & PROT_READ))

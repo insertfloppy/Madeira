@@ -18,6 +18,36 @@ struct ExternalFolder: Codable, Identifiable {
     /// Madeira's Steam downloads go to <folder>/SteamLibrary on this drive.
     var steamInstalls: Bool? = nil
     var libraryID: String? = nil
+    /// Where the folder was when it was added, and a sandbox extension for it.
+    /// A copy signed with an App ID that differs from its bundle ID gets the
+    /// folder for one launch only (its bookmark is refused on the next one), so
+    /// the extension is the way back in after Madeira is reopened.
+    var path: String? = nil
+    var token: String? = nil
+}
+
+/// Sandbox extensions (libsystem_sandbox, the same calls WKWebView uses to hand
+/// file access to its web process). While Madeira can reach a folder it can
+/// issue a token for it; consuming the token in a later launch opens the folder
+/// again without the bookmark. Tokens last until the phone restarts.
+enum FolderExtension {
+    private typealias Issue = @convention(c) (UnsafePointer<CChar>, UnsafePointer<CChar>, UInt32) -> UnsafeMutablePointer<CChar>?
+    private typealias Consume = @convention(c) (UnsafePointer<CChar>) -> Int64
+    private static let handle = UnsafeMutableRawPointer(bitPattern: -2) // RTLD_DEFAULT
+
+    static func issue(_ path: String) -> String? {
+        guard let sym = dlsym(handle, "sandbox_extension_issue_file") else { return nil }
+        let fn = unsafeBitCast(sym, to: Issue.self)
+        guard let raw = fn("com.apple.app-sandbox.read-write", path, 0) else { return nil }
+        defer { free(raw) }
+        let token = String(cString: raw)
+        return token.isEmpty || token.utf8.count > 4096 ? nil : token
+    }
+
+    static func consume(_ token: String) -> Bool {
+        guard let sym = dlsym(handle, "sandbox_extension_consume") else { return false }
+        return unsafeBitCast(sym, to: Consume.self)(token) >= 0
+    }
 }
 
 final class ExternalDrives: ObservableObject {
@@ -67,7 +97,8 @@ final class ExternalDrives: ObservableObject {
             guard try ExternalStoragePath.components(folder.name) == [folder.name],
                   folder.letter.count == 1, "defghijklmnopqrstuvwxy".contains(folder.letter),
                   !folder.bookmark.isEmpty, folder.bookmark.count <= 1 << 20,
-                  folder.libraryID == nil || UUID(uuidString: folder.libraryID!) != nil else { throw ExternalStorageError.invalidRecord }
+                  folder.libraryID == nil || UUID(uuidString: folder.libraryID!) != nil,
+                  (folder.path?.utf8.count ?? 0) <= 4096, (folder.token?.utf8.count ?? 0) <= 4096 else { throw ExternalStorageError.invalidRecord }
         }
     }
 
@@ -129,9 +160,15 @@ final class ExternalDrives: ObservableObject {
                     try Self.validateRoot(url, identity: folder.libraryID)
                     try link(folder, to: url, owned: true)
                     if stale { next[i].bookmark = try url.bookmarkData() }
+                    if let token = FolderExtension.issue(url.path) { next[i].path = url.path; next[i].token = token }
                     mounted[folder.id] = url
                 } catch { url.stopAccessingSecurityScopedResource(); throw error }
             } catch {
+                if let url = reopenWithToken(folder) {
+                    mounted[folder.id] = url
+                    if let token = FolderExtension.issue(url.path) { next[i].token = token }
+                    continue
+                }
                 LogStore.shared.log("[external] \(folder.name) unavailable: \(error.localizedDescription)")
                 unlink(folder)
             }
@@ -140,6 +177,25 @@ final class ExternalDrives: ObservableObject {
         publishOpened()
         refreshSteam()
         SteamOwnedLibrary.shared.externalStorageReconnected()
+    }
+
+    /// The second way back into a folder whose bookmark was refused: the
+    /// sandbox extension saved while it was open. Logs how far it got.
+    @MainActor private func reopenWithToken(_ folder: ExternalFolder) -> URL? {
+        guard let path = folder.path, let token = folder.token else { return nil }
+        let consumed = FolderExtension.consume(token)
+        let url = URL(fileURLWithPath: path, isDirectory: true)
+        let listable = (try? FileManager.default.contentsOfDirectory(atPath: path)) != nil
+        do {
+            guard consumed, listable else { throw ExternalStorageError.unavailable }
+            try Self.validateRoot(url, identity: folder.libraryID)
+            try link(folder, to: url, owned: true)
+            LogStore.shared.log("[external] \(folder.name) reopened with its saved access")
+            return url
+        } catch {
+            LogStore.shared.log("[external] \(folder.name) saved access failed: consumed=\(consumed ? 1 : 0) listable=\(listable ? 1 : 0) \(error.localizedDescription)")
+            return nil
+        }
     }
 
     /// Finds the Steam libraries on the opened drives, makes the chosen download
@@ -243,6 +299,9 @@ final class ExternalDrives: ObservableObject {
         let base = name; var n = 2
         while folders.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { name = "\(base) \(n)"; n += 1 }
         var folder = ExternalFolder(name: name, letter: letter, bookmark: bookmark)
+        folder.token = FolderExtension.issue(url.path)
+        if folder.token != nil { folder.path = url.path }
+        LogStore.shared.log("[external] saved access for \(name): \(folder.token != nil ? 1 : 0)")
         do {
             guard !mounted.values.contains(where: { $0.resolvingSymlinksInPath() == url.resolvingSymlinksInPath() }) else {
                 throw LibraryError.message("That folder is already registered.")
@@ -264,15 +323,17 @@ final class ExternalDrives: ObservableObject {
 
     /// Forgets a folder. Its files stay on the drive; the library entries that
     /// start programs on it (and its Steam games' entries) are removed.
-    @MainActor func remove(_ id: UUID) {
+    /// A folder that is not connected can always go: nothing can be using it (the
+    /// automatic cloud check at start-up used to block this, so Remove did nothing).
+    @MainActor func remove(_ id: UUID) throws {
         guard let folder = folders.first(where: { $0.id == id }) else { return }
-        guard wine_process_is_running() == 0, GameMover.shared.moving == nil,
-              !SteamOwnedLibrary.shared.hasStorageWork else {
+        guard mounted[id] == nil || (wine_process_is_running() == 0 && GameMover.shared.moving == nil &&
+              !SteamOwnedLibrary.shared.hasStorageWork) else {
             LogStore.shared.log("[external] drive kept while a game, download or cloud operation uses storage")
-            return
+            throw LibraryError.message("\(folder.name) is in use by a game, a download or a cloud save check. Try again when it has finished.")
         }
         do { try save(folders.filter { $0.id != id }) }
-        catch { LogStore.shared.log("[external] drive registration could not be removed"); return }
+        catch { LogStore.shared.log("[external] drive registration could not be removed"); throw error }
         let prefix = "External/\(folder.name)/"
         let library = LibraryModel.shared
         for entry in library.entries where entry.relativePath.hasPrefix(prefix) {
@@ -473,7 +534,9 @@ struct ExternalDrivesSection: View {
         }
         .confirmationDialog("Remove \(removing?.name ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
                             titleVisibility: .visible, presenting: removing) { folder in
-            Button("Remove", role: .destructive) { drives.remove(folder.id) }
+            Button("Remove", role: .destructive) {
+                do { try drives.remove(folder.id); error = nil } catch { self.error = error.localizedDescription }
+            }
         } message: { _ in
             Text("Madeira forgets this drive and removes its games from the library. The files on the drive are kept.")
         }

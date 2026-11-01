@@ -6083,6 +6083,33 @@ static BOOL ios_gmod_child_keeps_suspend(void)
 }
 #endif
 
+#ifdef WINE_IOS
+/* ds3-coop [child-suspend]: honor CREATE_SUSPENDED for a pseudo-process child.
+ *
+ * Every child's first thread is created suspended (kernelbase does that and
+ * resumes it itself unless its caller asked for CREATE_SUSPENDED), but
+ * server_init_process_done below runs it at once.  DS3 Seamless Co-op
+ * (ds3sc_launcher.exe: CreateProcess(SUSPENDED) -> CreateRemoteThread(
+ * LoadLibraryA, ds3sc.dll) -> ResumeThread) needs the game's main thread to
+ * still sit at its start: ds3sc's DllMain GetThreadContext()s it, requires
+ * Rip == GetProcAddress(ntdll, "RtlUserThreadStart"), moves Rcx (the entry
+ * RtlUserThreadStart will call) to its own init and SetThreadContext()s it;
+ * otherwise it silently does nothing.
+ *
+ * With env MADEIRA_HONOR_SUSPENDED=1 and a caller that passed CREATE_SUSPENDED
+ * the thread still starts at once, but the ARM64EC ntdll parks it after
+ * loader_init, right before NtContinue to RtlUserThreadStart (wine patch 0018,
+ * private thread info class 0x4d50, ios_park_start() in thread_ios.c), until
+ * the parent's NtResumeThread; Get/SetThreadContext on it read and change that
+ * start context.  Parked after the loader, not before it: a remote thread
+ * created while the process is not initialized runs loader_init itself, and
+ * its start address can only be rebased into this process's kernel32
+ * (ios_rebase_remote_thread_start) once the loader list exists.
+ * Based on meshoklv's 8539dc4c (meshoklv/Madeira ci-build). */
+_Thread_local int ios_park_start_pending;
+#endif
+
+
 /***********************************************************************
  *           server_init_process_done
  */
@@ -6152,7 +6179,25 @@ void server_init_process_done(void)
         dprintf(STDERR_FILENO, "[child-suspend] gmod.exe child starts suspended until its parent resumes it\n");
     else if (suspend)
     {
-        dprintf(STDERR_FILENO, "[Wine init_done] overriding suspend=%d → 0 for iOS\n", suspend);
+        extern _Thread_local int ios_child_create_suspended;
+        extern _Thread_local WORD ios_child_main_machine;
+        extern void ios_park_start_register(void);
+        /* 1: an x64 child created with CREATE_SUSPENDED waits at its start, after
+         * its DLLs load, until its parent resumes it, as on Windows (DS3 Seamless
+         * Co-op's launcher injects its DLL there). Default off: it starts at once. */
+        const char *honor = getenv( "MADEIRA_HONOR_SUSPENDED" );
+
+        /* the caller asked for CREATE_SUSPENDED: the ARM64EC loader of an x64
+         * child parks the thread after loader_init (see ios_park_start_pending) */
+        if (ios_child_create_suspended && ios_child_main_machine == IMAGE_FILE_MACHINE_AMD64 &&
+            honor && honor[0] == '1')
+        {
+            ios_park_start_pending = 1;
+            ios_park_start_register();
+        }
+        dprintf(STDERR_FILENO, "[Wine init_done] overriding suspend=%d → 0 for iOS%s\n", suspend,
+                ios_park_start_pending ? "; [child-suspend] CREATE_SUSPENDED honored: main thread will park "
+                                         "after loader init until NtResumeThread" : "");
         suspend = 0;
     }
     {

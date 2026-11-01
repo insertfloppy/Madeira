@@ -65,12 +65,12 @@ for m in re.finditer(r'static let (\w+) = GameRecommendation\(\n\s*id: "([^"]+)"
     lines = [line[len(indent):] if line.startswith(indent) else line for line in body.split('\n')]
     presets[ident] = dict(name=name, title=title, version=int(version), lines=lines, switches=' '.join((switches or '').split()))
 assert set(presets) == {'rdr2-steam', 'rdr2-other', 'gta5e-steam', 'gta5e-other', 'ghost-of-tsushima', 'god-of-war',
-                        'horizon-zero-dawn', 'dark-souls-remastered', 'dark-souls-iii', 'fallout-new-vegas', 'fallout-3', 'black-ops-2', 'project-zomboid', 'project-zomboid-b41',
-                        'counter-strike-2', 'escapists-2', 'slay-the-spire-2', 'garrys-mod', 'rockstar-launcher', 'rockstar-launcher-setup', 'ubisoft-connect', 'ubisoft-connect-setup', 'battle-net',
+                        'horizon-zero-dawn', 'dark-souls-remastered', 'dark-souls-iii', 'fallout-new-vegas', 'fallout-3', 'batman-arkham-city', 'black-ops-1', 'black-ops-2', 'project-zomboid', 'project-zomboid-b41',
+                        'counter-strike-2', 'escapists-2', 'slay-the-spire-2', 'garrys-mod', 'grounded', 'rockstar-launcher', 'rockstar-launcher-setup', 'ubisoft-connect', 'ubisoft-connect-setup', 'battle-net',
                         'battle-net-setup', 'ffxiv-launcher', 'ffxiv-setup', 'standard'}, sorted(presets)
 assert ('static let all = [rdr2Steam, rdr2Other, gta5EnhancedSteam, gta5EnhancedOther, ghostOfTsushima, godOfWar, horizonZeroDawn,\n'
-        '                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, blackOps2, projectZomboid, projectZomboidB41,\n'
-        '                      counterStrike2, escapists2, slayTheSpire2, garrysMod, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,\n'
+        '                      darkSoulsRemastered, darkSoulsIII, falloutNewVegas, fallout3, batmanArkhamCity, blackOps1, blackOps2, projectZomboid, projectZomboidB41,\n'
+        '                      counterStrike2, escapists2, slayTheSpire2, garrysMod, grounded, rockstarLauncher, rockstarLauncherSetup, ubisoftConnect, ubisoftConnectSetup, battleNet, battleNetSetup,\n'
         '                      ffxivLauncher, ffxivSetup, standard]') in lists_src
 
 # madeira-bcd's defaults where upstream's differ: every game madeira-bcd ran had them,
@@ -87,8 +87,8 @@ for ident, p in presets.items():
     # was tested through Madeira Dock with the standard list's lines.
     # The publishers' launchers' Chromium clients take no release delay (their allocator
     # reserves, releases and reserves again), and their installers the standard line only.
-    if ident in ('standard', 'fallout-new-vegas', 'fallout-3', 'black-ops-2', 'project-zomboid', 'project-zomboid-b41', 'counter-strike-2', 'escapists-2', 'slay-the-spire-2',
-                 'garrys-mod', 'rockstar-launcher-setup',
+    if ident in ('standard', 'fallout-new-vegas', 'fallout-3', 'batman-arkham-city', 'black-ops-1', 'black-ops-2', 'project-zomboid', 'project-zomboid-b41', 'counter-strike-2', 'escapists-2', 'slay-the-spire-2',
+                 'garrys-mod', 'grounded', 'rockstar-launcher-setup',
                  'ubisoft-connect', 'ubisoft-connect-setup', 'battle-net', 'battle-net-setup', 'ffxiv-launcher', 'ffxiv-setup'):
         assert not set(FORK_DEFAULTS) & set(p['lines']), (ident, "the list has none of madeira-bcd's defaults")
         p['tested'], p['fork'] = p['lines'][2:], []
@@ -118,7 +118,7 @@ for ident, p in presets.items():
         if key != 'env.WINEDLLOVERRIDES':
             named = named.replace('socialclubhelper.exe', '')
         assert 'socialclub' not in named and 'MADEIRA_DLL_LOCAL' not in line, (ident, line)
-for ident in ('fallout-new-vegas', 'fallout-3'):
+for ident in ('fallout-new-vegas', 'fallout-3', 'batman-arkham-city'):
     assert presets[ident]['tested'] == presets['standard']['tested'] and presets[ident]['switches'] == 'olderNvidia: true', presets[ident]
 print('PASS: twenty lists, recorded fork defaults retained, Dark Souls and Fallout lists kept separate, no key twice, '
       'every non-env key in the settings catalog, no Social Club DLL lines, no variant DLL switches')
@@ -206,6 +206,11 @@ assert bo2['tested'] == ['env.MADEIRA_AUDIO_LEAD_MS = 150', 'env.MADEIRA_EC_HOOK
     and bo2['version'] == 1, bo2
 assert not any(line.startswith('env.MADEIRA_AUDIO_LEAD_MS')
                for p in presets.values() if p is not bo2 for line in p['lines']), 'the 150 ms audio lead is Black Ops II\'s only'
+# Black Ops (owner's test, build 64, 2026-11-01): the standard list it ran with, Direct3D 9
+# naming a GeForce 7900 GS (the card picked for it) and 1280x720.
+bo1 = presets['black-ops-1']
+assert bo1['tested'] == ['env.MADEIRA_EC_HOOK_TRACE = 0'] and bo1['switches'] == 'olderNvidia: true, resolution: "1280x720"' \
+    and bo1['version'] == 1, bo1
 assert 'if size != GameRecommendation.screen720 { entry.resolution = size }\n            else if let lines720 = ResolutionChoices.screen720Value { entry.resolution = lines720 }' in apply_src
 gta = presets['gta5e-steam']
 assert 'env.MADEIRA_CHILD_ARGS = PlayGTAV.exe -nobattleye' in gta['lines']
@@ -217,10 +222,18 @@ assert 'env.MADEIRA_FASTSYNC_SEM = 1' in presets['gta5e-other']['lines']
 for ident in ('gta5e-steam', 'gta5e-other', 'rdr2-steam', 'rdr2-other', 'horizon-zero-dawn'):
     assert 'env.MADEIRA_LOCK_ORPHAN = stamped' in presets[ident]['lines'], ident
 # Version 3 of the Steam list (build 514): the VC++ setup's elevated engine is not started, as for RDR2.
-assert presets['gta5e-steam']['version'] == 3 and presets['gta5e-other']['version'] == 2, \
+assert presets['gta5e-steam']['version'] == 3 and presets['gta5e-other']['version'] == 3, \
     (presets['gta5e-steam']['version'], presets['gta5e-other']['version'])
 for ident in ('rdr2-steam', 'rdr2-other', 'gta5e-steam'):
     assert 'env.MADEIRA_SPAWN_BLOCK = RockstarErrorHandler;.be\\vc_redist' in presets[ident]['lines'], ident
+# Outside Steam version 3 (2026-11-01, an Epic copy): the launcher installer's VC++ setup blocked too, the Steam
+# list's pool and image lines, Social Club's browser without the GPU and DXCore, in the Wine desktop without services.
+gta_other = presets['gta5e-other']
+assert 'env.MADEIRA_SPAWN_BLOCK = RockstarErrorHandler;VCRed\\vc_redist;.be\\vc_redist' in gta_other['lines'], gta_other['lines']
+for line in ('pool-low = 1', 'env.MADEIRA_X64_IMAGE_NOCOPY = 1', 'env.WINEDLLOVERRIDES = dxcore=;video64=',
+             'env.MADEIRA_SC_CEF_FLAGS = --disable-gpu --disable-gpu-compositing'):
+    assert line in gta_other['lines'], line
+assert 'launchMode: "desktop"' in gta_other['switches'] and 'startServices' not in gta_other['switches'], gta_other['switches']
 assert 'resolution: "1280x720"' in presets['ghost-of-tsushima']['switches'] and 'avx: true' in presets['ghost-of-tsushima']['switches']
 assert 'resolution: "1920x1080"' in presets['god-of-war']['switches']
 # Horizon Zero Dawn, still being brought up: build 477's test list (register spaces other than 0,
@@ -324,7 +337,9 @@ CHROMIUM = ['pool-low = 1', 'pool-page-fit = 1', 'pool-split = 1', 'env.MADEIRA_
 for ident in ('rockstar-launcher', 'ubisoft-connect', 'battle-net'):
     p = presets[ident]
     if ident in ('ubisoft-connect', 'battle-net'):
-        assert p['version'] >= 2 and not any(line in p['lines'] for line in CHROMIUM[:-1]), (ident, 'no 64-bit Chromium chain')
+        # Battle.net v4 sizes the session's pool for the games it starts (pool-split only).
+        chain = [l for l in CHROMIUM[:-1] if not (ident == 'battle-net' and l == 'pool-split = 1')]
+        assert p['version'] >= 2 and not any(line in p['lines'] for line in chain), (ident, 'no 64-bit Chromium chain')
         assert 'env.MADEIRA_WOW_PLACEHOLDERS = 1' in p['lines'] and 'env.MADEIRA_WOW_MIN_FREE_GB = 2' in p['lines'], ident
     else:
         assert all(line in p['lines'] for line in CHROMIUM), (ident, 'the Chromium chain')
@@ -343,8 +358,15 @@ assert 'env.WINEDLLOVERRIDES = locationapi=d' in presets['battle-net']['lines'],
 # Battle.net.exe) gets one renderer and in-process GPU work through MADEIRA_CHILD_ARGS.
 for ident, exe in (('battle-net', 'Battle.net.exe'),):
     want = 'env.MADEIRA_CHILD_ARGS = %s --renderer-process-limit=1 --in-process-gpu' % exe
-    assert want in presets[ident]['lines'], (ident, 'fewer Chromium helpers')
-assert presets['ubisoft-connect']['version'] >= 5 and presets['battle-net']['version'] >= 3
+    assert any(l == want or l.startswith(want + ' ') for l in presets[ident]['lines']), (ident, 'fewer Chromium helpers')
+assert presets['ubisoft-connect']['version'] >= 5 and presets['battle-net']['version'] >= 4
+# Build 63 (2026-11-01): YouTube trailers and the store pages' JavaScript JIT filled Battle.net's one renderer.
+bnet_args = [l for l in presets['battle-net']['lines'] if l.startswith('env.MADEIRA_CHILD_ARGS')][0]
+for sw in ('--js-flags="--no-opt --no-sparkplug"', '--disable-site-isolation-trials',
+           '--autoplay-policy=user-gesture-required', 'MAP *.googlevideo.com ~NOTFOUND'):
+    assert sw in bnet_args, sw
+assert '--jitless' not in bnet_args, 'jitless also turns off WebAssembly (blank page)'
+assert 'pool-split = 1' in presets['battle-net']['lines']
 # Ubisoft's CEF ignores those switches (log 16:16Z): upc.exe alone is told 479 MB instead, which caps
 # Chromium at three renderers (exe-phys-mb, virtual_ios.c ios_exe_phys_bytes).
 assert 'exe-phys-mb = upc.exe:479' in presets['ubisoft-connect']['lines']
@@ -569,7 +591,10 @@ check(id(#"C:\Games\PZ\ProjectZomboid64.exe"#, files: [#"C:\Games\PZ\ProjectZomb
       "the current build by its program")
 check(id(steam + #"\Call of Duty Black Ops II\t6zm.exe"#) == "black-ops-2" && id(#"D:\BO2\T6SP.EXE"#) == "black-ops-2",
       "Black Ops II by its programs")
-check(id(steam + #"\Call of Duty Black Ops"#, 42700) == "none", "the first Black Ops is another game")
+check(id(steam + #"\Call of Duty Black Ops"#, 42700) == "black-ops-1" && id(steam + #"\Call of Duty Black Ops"#) == "black-ops-1"
+      && id(steam + #"\Call of Duty Black Ops\BlackOps.exe"#) == "black-ops-1", "the first Black Ops by App ID, folder and program")
+check(id(steam + #"\Call of Duty Black Ops"#, 42710) == "none" && id(steam + #"\Call of Duty Black Ops\BlackOpsMP.exe"#) == "none",
+      "the first Black Ops' multiplayer shares the folder and has no list")
 check(id(steam + #"\Counter-Strike Global Offensive"#, 730) == "counter-strike-2" && id(steam + #"\Counter-Strike Global Offensive"#) == "counter-strike-2"
       && id(steam + #"\Counter-Strike Global Offensive\game\bin\win64\cs2.exe"#) == "counter-strike-2", "Counter-Strike 2 by App ID, folder and program")
 check(id(steam + #"\The Escapists 2"#, 641990) == "escapists-2" && id(steam + #"\The Escapists 2"#) == "escapists-2"
@@ -578,6 +603,13 @@ check(id(steam + #"\Slay the Spire 2"#, 2868840) == "slay-the-spire-2" && id(ste
       && id(#"C:\x\steamapps\common\Slay the Spire 2\SlayTheSpire2.exe"#) == "slay-the-spire-2", "Slay the Spire 2 by App ID, folder and program")
 check(id(steam + #"\GarrysMod"#, 4000) == "garrys-mod" && id(steam + #"\GarrysMod"#) == "garrys-mod"
       && id(steam + #"\GarrysMod\bin\win64\gmod.exe"#) == "garrys-mod", "Garry's Mod by App ID, folder and program")
+check(id(steam + #"\Grounded"#, 962130) == "grounded" && id(steam + #"\Grounded"#) == "grounded"
+      && id(steam + #"\Grounded\Maine\Binaries\Win64\Maine-Win64-Shipping.exe"#) == "grounded", "Grounded by App ID, folder and program")
+check(id(steam + #"\Batman Arkham City GOTY"#, 200260) == "batman-arkham-city" && id(steam + #"\Batman Arkham City GOTY"#) == "batman-arkham-city"
+      && id(steam + #"\Batman Arkham City"#, 57400) == "batman-arkham-city"
+      && id(steam + #"\Batman Arkham City GOTY\Binaries\Win32\BatmanAC.exe"#) == "batman-arkham-city", "Arkham City by App ID, folder and program")
+check(id(steam + #"\Batman Arkham Asylum GOTY"#, 35140) == "none", "Arkham Asylum is another game")
+check(R.batmanArkhamCity.switchSummary == "older NVIDIA card on", R.batmanArkhamCity.switchSummary)
 check(id(#"C:\Games\Foo\foo.exe"#) == "none" && id(steam + #"\Portal 2"#, 620) == "none", "other games")
 check(id("") == "none" && id("C:\\") == "none", "no path")
 check(id(steam + #"\Fallout New Vegas"#, 22380) == "fallout-new-vegas" && id(steam + #"\Fallout New Vegas"#) == "fallout-new-vegas",

@@ -1,0 +1,105 @@
+Subject: [PATCH] ntdll ARM64EC: park a CREATE_SUSPENDED child at its start
+
+iOS-Madeira [child-suspend]: pseudo-process children always start at once.
+With env MADEIRA_HONOR_SUSPENDED=1 the iOS layer marks the main thread of a
+child its parent created with CREATE_SUSPENDED; LdrInitializeThunk then hands
+its start context (Pc = the RtlUserThreadStart export, as GetProcAddress
+returns it) to the iOS layer through private thread info class 0x4d50 and
+waits there, after loader_init, until the parent's NtResumeThread. A DLL
+injector such as DS3 Seamless Co-op's launcher reads and changes that context
+(Rcx = the entry) meanwhile. Every other thread asks with a ULONG and goes on.
+Based on meshoklv's 8539dc4c (meshoklv/Madeira ci-build), whose wine half was
+never published.
+
+diff --git a/dlls/ntdll/signal_arm64ec.c b/dlls/ntdll/signal_arm64ec.c
+index 05c47357..106ad821 100644
+--- a/dlls/ntdll/signal_arm64ec.c
++++ b/dlls/ntdll/signal_arm64ec.c
+@@ -5216,6 +5216,79 @@ void __attribute__((naked)) RtlUserThreadStart( PRTL_THREAD_START_ROUTINE entry,
+ }
+ 
+ 
++/* Madeira: the raw export address GetProcAddress( ntdll, name ) returns
++ * (LdrGetProcedureAddress without the loader lock, and without the ARM64EC
++ * redirect RtlFindExportedRoutineByName applies). */
++static void *ios_ntdll_export( const char *name )
++{
++    extern IMAGE_DOS_HEADER __ImageBase;
++    HMODULE module = (HMODULE)&__ImageBase;
++    const IMAGE_EXPORT_DIRECTORY *exports;
++    const DWORD *functions, *names;
++    const WORD *ordinals;
++    int min = 0, max, pos, res;
++    ULONG size;
++
++    if (!(exports = RtlImageDirectoryEntryToData( module, TRUE, IMAGE_DIRECTORY_ENTRY_EXPORT, &size )))
++        return NULL;
++    functions = (const DWORD *)((char *)module + exports->AddressOfFunctions);
++    names = (const DWORD *)((char *)module + exports->AddressOfNames);
++    ordinals = (const WORD *)((char *)module + exports->AddressOfNameOrdinals);
++    max = exports->NumberOfNames - 1;
++    while (min <= max)
++    {
++        pos = (min + max) / 2;
++        if (!(res = strcmp( (const char *)module + names[pos], name )))
++        {
++            if (ordinals[pos] >= exports->NumberOfFunctions || !functions[ordinals[pos]]) return NULL;
++            return (char *)module + functions[ordinals[pos]];
++        }
++        if (res > 0) max = pos - 1;
++        else min = pos + 1;
++    }
++    return NULL;
++}
++
++/* Madeira [child-suspend]: a child created with CREATE_SUSPENDED (when the
++ * iOS layer honors it, env MADEIRA_HONOR_SUSPENDED=1) waits here, after
++ * loader_init and before its entry, until its parent resumes it, as a
++ * suspended Windows process waits at RtlUserThreadStart.  A launcher that
++ * injects a DLL (DS3 Seamless Co-op) reads the main thread's context there,
++ * checks Rip == GetProcAddress( ntdll, "RtlUserThreadStart" ) and moves Rcx,
++ * the entry, to its own code.  So the context handed to the iOS layer
++ * (private thread info class 0x4d50, ios_park_start) carries that export as
++ * Pc, which can be an x64 thunk rather than this function's native code; the
++ * thread then starts from the X0-X3 left there, at its real start unless Pc was
++ * moved too.  Every thread asks first with a ULONG; only the main thread of
++ * such a child gets a yes. */
++static void ios_park_suspended_start( ARM64EC_NT_CONTEXT *context )
++{
++    ARM64_NT_CONTEXT arm;
++    ARM64EC_NT_CONTEXT back;
++    ULONG park = 0;
++    void *start;
++
++    if (NtQueryInformationThread( GetCurrentThread(), 0x4d50, &park, sizeof(park), NULL ) || !park) return;
++
++    context_x64_to_arm( &arm, context );
++    arm.ContextFlags = CONTEXT_ARM64_FULL;
++    start = ios_ntdll_export( "RtlUserThreadStart" );
++    if (start) arm.Pc = (ULONG_PTR)start;
++    ERR( "[child-suspend] parking at the start: pc=%p (RtlUserThreadStart export %p) entry=%p arg=%p\n",
++         (void *)context->Pc, start, (void *)context->X0, (void *)context->X1 );
++    if (NtQueryInformationThread( GetCurrentThread(), 0x4d50, &arm, sizeof(arm), NULL )) return;
++
++    context_arm_to_x64( &back, &arm );
++    if (!start || arm.Pc != (ULONG_PTR)start) context->Pc = back.Pc;
++    context->X0 = back.X0;
++    context->X1 = back.X1;
++    context->X2 = back.X2;
++    context->X3 = back.X3;
++    ERR( "[child-suspend] resumed: pc=%p entry=%p arg=%p\n",
++         (void *)context->Pc, (void *)context->X0, (void *)context->X1 );
++}
++
++
+ /******************************************************************
+  *		LdrInitializeThunk (NTDLL.@)
+  */
+@@ -5234,6 +5307,7 @@ void WINAPI LdrInitializeThunk( CONTEXT *arm_context, ULONG_PTR unk2, ULONG_PTR
+ 
+     context_arm_to_x64( &context, (ARM64_NT_CONTEXT *)arm_context );
+     loader_init( &context.AMD64_Context, (void **)&context.X0 );
++    ios_park_suspended_start( &context );
+     TRACE_(relay)( "\1Starting thread proc %p (arg=%p)\n", (void *)context.X0, (void *)context.X1 );
+     NtContinue( &context.AMD64_Context, TRUE );
+ }

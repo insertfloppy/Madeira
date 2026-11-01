@@ -12,8 +12,9 @@ import UIKit
 // are only served through addresses GOG signs for an account that owns the game.
 // Games download unmodified from GOG's CDN into C:\GOG Games\<folder> and start as
 // their own program in Wine, as the build's goggame-<id>.info names it (GOG
-// Galaxy's own "play task"). There is no GOG Galaxy client in the prefix; GOG
-// games are DRM-free and need no sign-in to start. DLC the account owns installs
+// Galaxy's own "play task"). There is no GOG Galaxy client in the prefix (Madeira
+// answers for it while a game runs: GOGGalaxy.swift); GOG games are DRM-free and
+// need no sign-in to start. DLC the account owns installs
 // with the game. `env.MADEIRA_GOG = 0` turns the whole thing off.
 // Log tags: [gog-library], [gog-download] (product ids, counts and short reason
 // codes; never account data).
@@ -52,6 +53,9 @@ struct GOGInstalledGame: Codable, Sendable {
     var setup: [GOGSetupProgram]?
     /// Redistributables left out, and why.
     var setupNotes: [GOGSetupNote]?
+    /// The program the player chose on the game's page (relative to the install folder),
+    /// kept over updates while it exists; nil: GOG's primary play task.
+    var chosenProgram: String?
     var programPath: String { folder + "/" + launchExe }
     /// The working folder as a C:\ path, or nil.
     var workingWindowsPath: String? {
@@ -401,6 +405,7 @@ struct GOGInstalledGame: Codable, Sendable {
                 let data = try await api.depotManifest(depot.manifest)
                 files += try await Task.detached(priority: .userInitiated) { try GOGDepot.files(data, product: depot.productID) }.value
             }
+            files = GOGDepot.unique(files)
             let record = installed[id]
             let folder = record?.folder ?? (Self.installRoot + "/" + GOGLibrary.safeName(manifest.installDirectory))
             try? FileManager.default.createDirectory(at: Self.journalURL(id).deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -421,11 +426,17 @@ struct GOGInstalledGame: Codable, Sendable {
             try? JSONEncoder().encode(files).write(to: Self.filesURL(id), options: .atomic)
             let setup = try await installRedistributables(id, manifest: manifest, folder: folder, repair: kind == .repair, step: step)
             try? FileManager.default.removeItem(at: Self.journalURL(id).deletingPathExtension().appendingPathExtension("folder"))
-            let task = try Self.playTask(folder: Self.drive.appendingPathComponent(folder, isDirectory: true), product: id)
-            let finished = GOGInstalledGame(
+            let root = Self.drive.appendingPathComponent(folder, isDirectory: true)
+            var task = try Self.playTask(folder: root, product: id)
+            // The player's own choice of program stays while the new build still has it.
+            if let chosen = record?.chosenProgram, let choice = Self.programChoices(folder: root, product: id).first(where: { $0.task.path == chosen }) {
+                task = choice.task
+            }
+            var finished = GOGInstalledGame(
                 productID: id, title: title, folder: folder, buildID: build.buildID, versionName: build.versionName,
                 language: language, launchExe: task.path, arguments: task.arguments, workingDir: task.workingDir,
                 installBytes: result.installBytes, dlc: dlc, galaxy: manifest.galaxy, setup: setup.run, setupNotes: setup.notes)
+            if task.path == record?.chosenProgram { finished.chosenProgram = task.path }
             installed[id] = finished
             latestBuild[id] = build.buildID
             writeInstalled()
@@ -504,9 +515,55 @@ struct GOGInstalledGame: Codable, Sendable {
         return lines.joined(separator: "\r\n")
     }
 
+    // MARK: Install script
+
+    /// The installed GOG game whose folder holds `entry`'s program: the entry's own
+    /// game, or one whose folder an added program sits in (System\witcher.exe).
+    func installedGame(for entry: LibraryEntry) -> GOGInstalledGame? {
+        if let product = entry.gogProductID, let record = installed[product] { return record }
+        let path = entry.relativePath.lowercased()
+        return installed.values.first { path.hasPrefix($0.folder.lowercased() + "/") }
+    }
+
+    /// Called right before a library game starts, while no session runs: the registry
+    /// values of the game's install scripts (GOGInstallScript), which GOG Galaxy's
+    /// script interpreter would have written. A value the prefix has stays as it is,
+    /// except one made from the game's folder, which follows the folder.
+    func writeInstallScriptRegistry(for entry: LibraryEntry) {
+        guard entry.desktop != true, let record = installedGame(for: entry),
+              wineserver_is_running() == 0, wine_process_is_running() == 0 else { return }
+        let folderURL = Self.drive.appendingPathComponent(record.folder, isDirectory: true)
+        let folder = "C:\\" + record.folder.replacingOccurrences(of: "/", with: "\\")
+        var values: [SteamInstallValue] = []
+        for file in GOGInstallScript.scripts(in: folderURL) {
+            guard let data = try? Data(contentsOf: file), let script = GOGInstallScript.parse(data) else {
+                GOGLog.event("[gog-script] \(file.lastPathComponent) could not be read")
+                continue
+            }
+            let plan = script.plan(folder: folder, language: record.language)
+            for note in plan.notes { GOGLog.event("[gog-script] \(note)") }
+            values += plan.values.map { value in
+                let data: SteamInstallValue.Content
+                switch value.data {
+                case .string(let text): data = .string(text)
+                case .dword(let number): data = .dword(number)
+                }
+                return SteamInstallValue(hive: value.root == .machine ? .machine : .user, key: value.key,
+                                         name: value.name, data: data, followsInstall: value.followsInstall)
+            }
+        }
+        guard !values.isEmpty else { return }
+        do {
+            let changed = try SteamInstallRegistry.write(values, prefix: Self.drive.deletingLastPathComponent())
+            GOGLog.event("[gog-script] id=\(record.productID) registry values=\(values.count) written=\(changed)")
+        } catch {
+            GOGLog.event("[gog-script] id=\(record.productID) registry not written: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: Play task
 
-    struct PlayTask: Equatable { var path: String; var arguments: String; var workingDir: String? }
+    struct PlayTask: Equatable, Sendable { var path: String; var arguments: String; var workingDir: String? }
 
     /// How GOG Galaxy starts the game: the primary file task of goggame-<id>.info in the
     /// install folder, else the folder's only program.
@@ -521,6 +578,70 @@ struct GOGInstalledGame: Codable, Sendable {
         let programs = names.filter { $0.lowercased().hasSuffix(".exe") && !$0.lowercased().hasPrefix("unins") }
         if programs.count == 1 { return PlayTask(path: programs[0], arguments: "", workingDir: nil) }
         throw GOGAPIError.noPlayTask
+    }
+
+    /// A program the game's page offers: GOG's play tasks first (its name, such as
+    /// "Launcher" or "The Witcher"), then the other programs in the install folder and
+    /// one folder below it (a launcher that quits leaves the game itself one tap away).
+    struct ProgramChoice: Equatable, Identifiable, Sendable {
+        var name: String
+        var task: PlayTask
+        var id: String { task.path.lowercased() }
+    }
+
+    nonisolated static func programChoices(folder: URL, product: String) -> [ProgramChoice] {
+        let fm = FileManager.default
+        var choices: [ProgramChoice] = []
+        func add(_ choice: ProgramChoice) {
+            if !choices.contains(where: { $0.id == choice.id }), choices.count < 40 { choices.append(choice) }
+        }
+        let names = (try? fm.contentsOfDirectory(atPath: folder.path)) ?? []
+        if let name = names.first(where: { $0.lowercased() == "goggame-\(product).info" }),
+           let data = try? Data(contentsOf: folder.appendingPathComponent(name)), data.count < 4 << 20 {
+            for (title, task) in playTasks(info: data) { add(ProgramChoice(name: title, task: task)) }
+        }
+        func programs(_ relative: String) -> [String] {
+            let url = relative.isEmpty ? folder : folder.appendingPathComponent(relative, isDirectory: true)
+            return ((try? fm.contentsOfDirectory(atPath: url.path)) ?? []).sorted().filter {
+                let lower = $0.lowercased()
+                return lower.hasSuffix(".exe") && !lower.hasPrefix("unins") && !lower.hasPrefix("madeira-")
+            }.map { relative.isEmpty ? $0 : relative + "/" + $0 }
+        }
+        var folders: [String] = []
+        for name in names.sorted() where !name.hasPrefix(".") && !name.hasPrefix("__") {
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: folder.appendingPathComponent(name).path, isDirectory: &isDir), isDir.boolValue { folders.append(name) }
+        }
+        for path in programs("") + folders.prefix(40).flatMap(programs) {
+            add(ProgramChoice(name: (path as NSString).lastPathComponent, task: PlayTask(path: path, arguments: "", workingDir: nil)))
+        }
+        return choices
+    }
+
+    /// Starts the game with another program (the game's page). The library entry follows
+    /// in the page itself; this keeps the choice over updates.
+    func chooseProgram(_ id: String, _ choice: ProgramChoice) {
+        guard var record = installed[id] else { return }
+        record.launchExe = choice.task.path
+        record.arguments = choice.task.arguments
+        record.workingDir = choice.task.workingDir
+        record.chosenProgram = choice.task.path
+        installed[id] = record
+        writeInstalled()
+        GOGLog.event("[gog-library] program chosen id=\(id)")
+    }
+
+    /// Every file task of a goggame-<id>.info file, with its name, primary first.
+    nonisolated static func playTasks(info data: Data) -> [(String, PlayTask)] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tasks = json["playTasks"] as? [[String: Any]] else { return [] }
+        let files = tasks.filter { ($0["type"] as? String ?? "FileTask") == "FileTask" && $0["path"] is String }
+        let ordered = files.filter { $0["isPrimary"] as? Bool == true } + files.filter { $0["isPrimary"] as? Bool != true }
+        return ordered.compactMap { task in
+            guard let one = try? JSONSerialization.data(withJSONObject: ["playTasks": [task.merging(["isPrimary": true]) { _, new in new }]]),
+                  let parsed = playTask(info: one) else { return nil }
+            return ((task["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? parsed.path, parsed)
+        }
     }
 
     /// The play task from a goggame-<id>.info file's JSON.

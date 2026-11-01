@@ -39,6 +39,17 @@ struct DockGame: Identifiable, Equatable, Sendable, Codable {
     var windowsInstallPath: String {
         "C:\\" + (library + "/common/" + installDir).replacingOccurrences(of: "/", with: "\\")
     }
+
+    /// The installed Steam game whose install folder holds `program` (a Windows path), so a
+    /// game added from a folder inside a Steam library starts with its own Steam identity
+    /// instead of the bridge's fixed one (WineProcessBridge.m, "Steam game vars"). The
+    /// deepest install folder wins; case is ignored, as Windows does.
+    static func containing(windowsProgram program: String, in games: [DockGame]) -> DockGame? {
+        let path = program.replacingOccurrences(of: "/", with: "\\").lowercased()
+        return games
+            .filter { path.hasPrefix($0.windowsInstallPath.lowercased() + "\\") }
+            .max { $0.windowsInstallPath.count < $1.windowsInstallPath.count }
+    }
 }
 
 /// Madeira Dock: a small headless host (madeira-dock, built by

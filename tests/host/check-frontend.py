@@ -113,6 +113,7 @@ enum GamepadInput { static let keyboardMouseAvailable = true }   // LibraryEntry
 struct GestureZone: Codable, Identifiable, Equatable { var id = UUID() }   // LibraryEntry.zones (GestureZones.swift)
 struct PadAssistSettings: Codable, Equatable { var x = 0 }   // LibraryEntry.padAssist (PadAssist.swift)
 enum LibraryError: LocalizedError { case message(String) }
+enum LauncherID: CaseIterable { case none; var sectionFolders: [String] { [] } }   // configureLaunch's launcher-program check (LauncherGames.swift)
 struct DockGame { let id: Int; let windowsInstallPath: String   // configureLaunch's local-entry Steam identity (MadeiraDock.swift)
     static func containing(windowsProgram program: String, in games: [DockGame]) -> DockGame? { nil } }
 enum MadeiraDock { static var drive: URL { URL(fileURLWithPath: "/nonexistent") }; static func games(drive: URL) -> [DockGame] { [] } }

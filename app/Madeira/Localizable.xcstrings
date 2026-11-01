@@ -19755,36 +19755,36 @@
         }
       }
     },
-    "The game starts its own program in Wine, as GOG Galaxy would. There is no GOG Galaxy in Madeira, so Galaxy features such as achievements and cloud saves are not available.": {
+    "The game starts its own program in Wine, as GOG Galaxy would. Madeira stands in for GOG Galaxy while the game runs, so a game that uses Galaxy gets its achievements and stats. Galaxy cloud saves are not available yet.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Das Spiel startet sein eigenes Programm in Wine, wie es GOG Galaxy tun würde. In Madeira gibt es kein GOG Galaxy, daher sind Galaxy-Funktionen wie Erfolge und Cloud-Spielstände nicht verfügbar."
+            "value": "Das Spiel startet sein eigenes Programm in Wine, wie es GOG Galaxy tun würde. Madeira übernimmt die Rolle von GOG Galaxy, solange das Spiel läuft, daher erhält ein Spiel, das Galaxy nutzt, seine Erfolge und Statistiken. Galaxy-Cloud-Spielstände sind noch nicht verfügbar."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "El juego inicia su propio programa en Wine, como lo haría GOG Galaxy. No hay GOG Galaxy en Madeira, así que funciones de Galaxy como logros y partidas en la nube no están disponibles."
+            "value": "El juego inicia su propio programa en Wine, como lo haría GOG Galaxy. Madeira hace las veces de GOG Galaxy mientras el juego se ejecuta, así que un juego que usa Galaxy obtiene sus logros y estadísticas. Las partidas en la nube de Galaxy aún no están disponibles."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "게임은 GOG Galaxy처럼 Wine에서 자체 프로그램을 시작합니다. Madeira에는 GOG Galaxy가 없으므로 도전 과제, 클라우드 저장 같은 Galaxy 기능은 사용할 수 없습니다."
+            "value": "게임은 GOG Galaxy처럼 Wine에서 자체 프로그램을 시작합니다. 게임이 실행되는 동안 Madeira가 GOG Galaxy 역할을 하므로, Galaxy를 사용하는 게임은 도전 과제와 통계를 받을 수 있습니다. Galaxy 클라우드 저장은 아직 사용할 수 없습니다."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "O jogo inicia o próprio programa no Wine, como o GOG Galaxy faria. Não existe GOG Galaxy no Madeira, então recursos do Galaxy como conquistas e saves na nuvem não estão disponíveis."
+            "value": "O jogo inicia o próprio programa no Wine, como o GOG Galaxy faria. O Madeira faz o papel do GOG Galaxy enquanto o jogo roda, então um jogo que usa o Galaxy recebe suas conquistas e estatísticas. Saves na nuvem do Galaxy ainda não estão disponíveis."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Игра запускает собственную программу в Wine, как это сделал бы GOG Galaxy. GOG Galaxy в Madeira нет, поэтому функции Galaxy, такие как достижения и облачные сохранения, недоступны."
+            "value": "Игра запускает собственную программу в Wine, как это сделал бы GOG Galaxy. Пока игра запущена, Madeira заменяет GOG Galaxy, поэтому игра, использующая Galaxy, получает свои достижения и статистику. Облачные сохранения Galaxy пока недоступны."
           }
         }
       }

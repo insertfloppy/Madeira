@@ -127,6 +127,30 @@ physical input takes it over. Hiding the controls or disconnecting the pad then
 leaves player 1 connected at rest until the app exits. Without the switch,
 slot 0 connects only when a real source appears, as before.
 
+## A controller turned on mid-game (ml2190)
+
+XInputGetState reads the host slot on every call, so a game that polls all
+four slots sees a pad that is turned on after it started. Many input layers do
+not: they enumerate once and look again only when Windows sends
+`WM_DEVICECHANGE`. SDL2 waits for `DBT_DEVICEARRIVAL` on the message-only
+window it registered for `GUID_DEVINTERFACE_HID`, GLFW on its helper window,
+Unreal Engine polls only pads it already knows until any `WM_DEVICECHANGE`
+reaches its main window, and DirectInput games re-run `EnumDevices` on it.
+Windows sends these from the PnP manager; a Madeira session runs no PlugPlay
+service, so `RegisterDeviceNotification` succeeds and nothing ever arrives.
+
+win32u (`ios_pad_hotplug_poll`, build/win32u-unix/driver_ios.c) compares the
+connected XInput slots at message polls, at most every 250 ms. When a slot
+connects or disconnects, each Wine thread, at its own next message poll, sends
+its top-level and message-only windows `DBT_DEVICEARRIVAL` /
+`DBT_DEVICEREMOVECOMPLETE` with a HID and an XUSB device interface for each
+changed slot, then `DBT_DEVNODES_CHANGED` to its top-level windows, as Windows
+broadcasts it. Pads already connected when a thread first polls are not
+announced. Touch player 1 connecting counts as an arrival too.
+`env.MADEIRA_PAD_HOTPLUG = 0` turns it off. Logged as `[pad-hotplug] ml2190`
+(24 lines). Windows.Gaming.Input already rescans once a second (below); in HID
+mode (`MADEIRA_PAD_MODE = hid`) player 1's device exists from the start.
+
 ## Face-button order per game
 
 `env.MADEIRA_PAD_FACE` (a game's own lines first, then madeira.cfg) names, as

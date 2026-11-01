@@ -14936,28 +14936,50 @@ static NTSTATUS get_vprot_flags( DWORD protect, unsigned int *vprot, BOOL image 
  * but names live in the image's read-only .rdata so they're stable. */
 const char *ios_pe_module_name( const void *image_base, size_t image_size )
 {
-    const unsigned char *b = image_base;
-    uint32_t lfanew, exp_rva, name_rva;
-    const unsigned char *pe;
+    /* madeira-bcd [fault-deadlock]: every read is a checked Mach read. This runs
+     * under virtual_mutex (mprotect_exec's image-reload log line), and the
+     * mapping it names can be one whose pages are not readable yet: build 63
+     * (2026-11-01) StarCraft's ClientSdk.dll unmapped itself and mapped a section
+     * at the same base; the export-directory read here faulted on the new view,
+     * the Mach handler waited for virtual_mutex held by this very thread, and the
+     * whole session froze. A name is diagnostics only: "?" is always acceptable. */
+    uintptr_t b = (uintptr_t)image_base;
+    uint32_t lfanew = 0, exp_rva = 0, name_rva = 0;
+    uint16_t magic = 0;
+    unsigned char mz[2] = { 0, 0 }, pe[2] = { 0, 0 };
+    mach_vm_size_t got;
+    size_t cap, i;
 
+#define IOS_PE_READ(addr, dst, len) \
+    (got = 0, mach_vm_read_overwrite( mach_task_self(), (mach_vm_address_t)(addr), (len), \
+                                      (mach_vm_address_t)(dst), &got ) == KERN_SUCCESS && got == (len))
     if (!b || image_size < 0x100) return "?";
-    if (b[0] != 'M' || b[1] != 'Z') return "?";
-    lfanew = *(const uint32_t *)(b + 0x3c);
-    if ((size_t)lfanew + 0x90 > image_size) return "?";
-    pe = b + lfanew;
-    if (pe[0] != 'P' || pe[1] != 'E') return "?";
-    if (*(const uint16_t *)(pe + 0x18) != 0x20b) return "?";   /* PE32+ only */
-    exp_rva = *(const uint32_t *)(pe + 0x88);                  /* DataDir[0] Export VA */
+    if (!IOS_PE_READ( b, mz, 2 ) || mz[0] != 'M' || mz[1] != 'Z') return "?";
+    if (!IOS_PE_READ( b + 0x3c, &lfanew, 4 ) || (size_t)lfanew + 0x90 > image_size) return "?";
+    if (!IOS_PE_READ( b + lfanew, pe, 2 ) || pe[0] != 'P' || pe[1] != 'E') return "?";
+    if (!IOS_PE_READ( b + lfanew + 0x18, &magic, 2 ) || magic != 0x20b) return "?";   /* PE32+ only */
+    if (!IOS_PE_READ( b + lfanew + 0x88, &exp_rva, 4 )) return "?";                   /* DataDir[0] Export VA */
     if (!exp_rva || (size_t)exp_rva + 0x10 > image_size) return "?";
-    name_rva = *(const uint32_t *)(b + exp_rva + 0x0c);        /* IMAGE_EXPORT_DIRECTORY.Name */
+    if (!IOS_PE_READ( b + exp_rva + 0x0c, &name_rva, 4 )) return "?";                 /* IMAGE_EXPORT_DIRECTORY.Name */
     if (!name_rva || (size_t)name_rva + 1 > image_size) return "?";
-    /* Ensure NUL within the image so the %s can't run off the mapping. */
+    cap = image_size - name_rva;
+    if (cap > 64) cap = 64;
+    /* byte by byte: the name may end right before an unreadable page. Once every
+     * byte up to the NUL read back, the name is returned in place, as before
+     * (callers keep the pointer across further calls). */
     {
-        size_t i, cap = image_size - name_rva;
-        if (cap > 64) cap = 64;
-        for (i = 0; i < cap; i++) if (b[name_rva + i] == 0) return (const char *)(b + name_rva);
-        return "?";
+        char buf[64];
+        uintptr_t n0 = b + name_rva;
+        size_t first = 0x4000 - (n0 & 0x3fff);   /* bytes left on the name's 16 KB page */
+
+        if (first > cap) first = cap;
+        if (!IOS_PE_READ( n0, buf, first )) return "?";
+        if (first < cap && !memchr( buf, 0, first ) && !IOS_PE_READ( n0 + first, buf + first, cap - first ))
+            return "?";
+        for (i = 0; i < cap; i++) if (!buf[i]) return (const char *)n0;
     }
+#undef IOS_PE_READ
+    return "?";
 }
 
 
@@ -28016,7 +28038,45 @@ NTSTATUS ios_virtual_handle_fault_for_thread( EXCEPTION_RECORD *rec, TEB *teb )
     char *page = ROUND_ADDR( addr, host_page_mask );
     BYTE vprot;
 
-    mutex_lock( &virtual_mutex );
+    /* madeira-bcd [fault-deadlock]: this runs on the Mach exception thread, not on
+     * the faulting thread. If the faulting thread itself holds virtual_mutex (a
+     * fault inside NtMapViewOfSection, NtProtectVirtualMemory, ...), a blocking
+     * lock here waits forever and every other thread of the session queues behind
+     * it: build 63, 2026-11-01, StarCraft's ClientSdk.dll re-mapping itself froze
+     * StarCraft, Battle.net and the whole session ("everything paused"), with the
+     * exception thread parked in this function and 30 threads in
+     * server_enter_uninterrupted_section. Wait up to 2 s (a long map or protect on
+     * another thread finishes well within that), then report the fault without
+     * servicing it, naming the host pc and the address, instead of freezing. */
+    if (pthread_mutex_trylock( &virtual_mutex ))
+    {
+        int tries;
+
+        for (tries = 0; tries < 2000; tries++)
+        {
+            usleep( 1000 );
+            if (!pthread_mutex_trylock( &virtual_mutex )) break;
+        }
+        if (tries == 2000)
+        {
+            static int deadlock_logs;
+            if (deadlock_logs++ < 16)
+            {
+                Dl_info di;
+                void *pc = rec->ExceptionAddress;
+                int named = dladdr( pc, &di ) && di.dli_fbase;
+
+                dprintf( 2, "[fault-deadlock] virtual_mutex still held after 2 s while a fault at pc=%p "
+                            "(%s+0x%lx, image+0x%lx) addr=%p %s waits for it -- most likely the faulting "
+                            "thread holds it; NOT servicing, so the session does not freeze\n",
+                         pc, named && di.dli_sname ? di.dli_sname : "?",
+                         named && di.dli_saddr ? (unsigned long)((char *)pc - (char *)di.dli_saddr) : 0ul,
+                         named ? (unsigned long)((char *)pc - (char *)di.dli_fbase) : 0ul,
+                         addr, err == EXCEPTION_WRITE_FAULT ? "write" : err == EXCEPTION_EXECUTE_FAULT ? "exec" : "read" );
+            }
+            return STATUS_ACCESS_VIOLATION;
+        }
+    }
     vprot = get_host_page_vprot( page );
 
     if (err == EXCEPTION_READ_FAULT && (get_unix_prot( vprot ) & PROT_READ))

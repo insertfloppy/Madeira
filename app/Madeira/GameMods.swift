@@ -584,9 +584,6 @@ struct GameModsSection: View {
     /// The game's config changed (BepInEx's DLL override): Game details reads it again.
     var changed: () -> Void = {}
     @State private var mods: [InstalledMod] = []
-    @State private var pending: GameMods.Prepared?
-    @State private var installer: GameMods.Prepared?
-    @State private var place: ModPlan.Place = .gameFolder
     @State private var working: String?
     @State private var error: String?
     @State private var unity: String?
@@ -626,18 +623,6 @@ struct GameModsSection: View {
             Text("Mods")
         } footer: {
             Text("Choose a mod's .zip, .7z or .rar, or its unpacked folder, from Files (Nexus Mods, Thunderstore and other sites). Madeira puts the files where the game expects them, asks for the options of a mod with an installer, turns on its plugins, and Remove puts the game back as it was.")
-        }
-        .sheet(isPresented: Binding(get: { pending != nil }, set: { if !$0 { finish(pending); pending = nil } })) {
-            if let pending { confirmSheet(pending) }
-        }
-        .sheet(isPresented: Binding(get: { installer != nil }, set: { if !$0 { finish(installer); installer = nil } })) {
-            if let installer, let fomod = installer.fomod {
-                FomodInstallerSheet(prepared: installer, fomod: fomod, gameFolder: gameFolder) { plan, place in
-                    let chosen = installer
-                    self.installer = nil
-                    install(chosen, plan: plan, place: place)
-                }
-            }
         }
         .confirmationDialog(confirmRemove.map { "Remove \($0.name)?" } ?? "",
                             isPresented: Binding(get: { confirmRemove != nil }, set: { if !$0 { confirmRemove = nil } }),
@@ -693,8 +678,7 @@ struct GameModsSection: View {
                 let prepared = try await Task.detached(priority: .userInitiated) {
                     try GameMods.prepare(url, gameFolder: folder)
                 }.value
-                if prepared.fomod != nil { installer = prepared } else { place = prepared.plan.place; pending = prepared }
-                LogStore.shared.log("[mods] \(prepared.name): \(prepared.fomod != nil ? "installer options" : "place sheet") shown, \(prepared.plan.files.count) files, suggested \(prepared.plan.place.rawValue)")
+                show(prepared)
             } catch {
                 self.error = error.localizedDescription
                 LogStore.shared.log("[mods] \(url.lastPathComponent): \(error.localizedDescription)")
@@ -703,10 +687,35 @@ struct GameModsSection: View {
         }
     }
 
-    private func finish(_ prepared: GameMods.Prepared?) {
-        guard let prepared, working == nil else { return }
-        LogStore.shared.log("[mods] \(prepared.name): closed without installing")
-        for url in prepared.cleanup { try? FileManager.default.removeItem(at: url) }
+    /// Asks where (or which options). The sheet is presented by UIKit, not by a
+    /// .sheet on this section: a sheet attached inside Game details' Form opened
+    /// and closed again at once on build 67 when the page redrew.
+    private func show(_ prepared: GameMods.Prepared) {
+        let folder = gameFolder
+        let closed = { (how: String) in
+            LogStore.shared.log("[mods] \(prepared.name): \(how) without installing")
+            for url in prepared.cleanup { try? FileManager.default.removeItem(at: url) }
+        }
+        let chosen = { (plan: ModPlan, place: ModPlan.Place) in
+            ModSheetHost.shared.close()
+            install(prepared, plan: plan, place: place)
+        }
+        let shown: Bool
+        if let fomod = prepared.fomod {
+            shown = ModSheetHost.shared.show(FomodInstallerSheet(prepared: prepared, fomod: fomod, gameFolder: folder,
+                                                                 cancel: { ModSheetHost.shared.close(); closed("cancelled") },
+                                                                 install: chosen), swiped: { closed("swiped away") })
+        } else {
+            shown = ModSheetHost.shared.show(ModPlaceSheet(prepared: prepared, gameFolder: folder,
+                                                           cancel: { ModSheetHost.shared.close(); closed("cancelled") },
+                                                           install: chosen), swiped: { closed("swiped away") })
+        }
+        LogStore.shared.log("[mods] \(prepared.name): \(prepared.fomod != nil ? "installer options" : "place sheet")"
+            + (shown ? " shown" : " could not be shown (no window)") + ", \(prepared.plan.files.count) files, suggested \(prepared.plan.place.rawValue)")
+        if !shown {
+            error = "Madeira could not show the mod's install screen."
+            closed("not shown")
+        }
     }
 
     private func install(_ prepared: GameMods.Prepared, plan: ModPlan, place chosen: ModPlan.Place) {
@@ -735,8 +744,58 @@ struct GameModsSection: View {
             working = nil; reload(); changed()
         }
     }
+}
 
-    @ViewBuilder private func confirmSheet(_ prepared: GameMods.Prepared) -> some View {
+/// Presents a mod's install sheet from UIKit, on top of whatever is showing, so
+/// Game details redrawing its Form cannot close it.
+@MainActor final class ModSheetHost: NSObject, UIAdaptivePresentationControllerDelegate {
+    static let shared = ModSheetHost()
+    private weak var shown: UIViewController?
+    private var swiped: (() -> Void)?
+
+    @discardableResult
+    func show<V: View>(_ view: V, swiped: @escaping () -> Void) -> Bool {
+        guard let top = ExternalFolderPicker.topController() else { return false }
+        let host = UIHostingController(rootView: view)
+        host.isModalInPresentation = false
+        self.swiped = swiped
+        shown = host
+        host.presentationController?.delegate = self
+        top.present(host, animated: true)
+        return true
+    }
+
+    func close() {
+        swiped = nil
+        shown?.dismiss(animated: true)
+        shown = nil
+    }
+
+    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        let swiped = self.swiped
+        self.swiped = nil
+        shown = nil
+        swiped?()
+    }
+}
+
+/// Where a mod without an installer goes, with the first files it puts there.
+struct ModPlaceSheet: View {
+    let prepared: GameMods.Prepared
+    let gameFolder: String
+    let cancel: () -> Void
+    let install: (ModPlan, ModPlan.Place) -> Void
+    @State private var place: ModPlan.Place
+
+    init(prepared: GameMods.Prepared, gameFolder: String, cancel: @escaping () -> Void, install: @escaping (ModPlan, ModPlan.Place) -> Void) {
+        self.prepared = prepared
+        self.gameFolder = gameFolder
+        self.cancel = cancel
+        self.install = install
+        _place = State(initialValue: prepared.plan.place)
+    }
+
+    var body: some View {
         let plan = prepared.plan
         NavigationStack {
             Form {
@@ -754,15 +813,13 @@ struct GameModsSection: View {
                 }
                 Section {
                     Button("Install", systemImage: "square.and.arrow.down") {
-                        let chosen = place
-                        LogStore.shared.log("[mods] \(prepared.name): Install tapped (\(chosen.rawValue))")
-                        pending = nil
-                        install(prepared, plan: plan, place: chosen)
+                        LogStore.shared.log("[mods] \(prepared.name): Install tapped (\(place.rawValue))")
+                        install(plan, place)
                     }
                 }
             }
             .navigationTitle("Add Mod").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { finish(pending); pending = nil } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { cancel() } } }
         }
     }
 }
@@ -820,8 +877,8 @@ struct FomodInstallerSheet: View {
     let prepared: GameMods.Prepared
     let fomod: Fomod
     let gameFolder: String
+    let cancel: () -> Void
     let install: (ModPlan, ModPlan.Place) -> Void
-    @Environment(\.dismiss) private var dismiss
     @State private var selection: Fomod.Selection = []
     @State private var page = 0
     @State private var images: [String: UIImage] = [:]
@@ -849,7 +906,7 @@ struct FomodInstallerSheet: View {
             .navigationTitle(page < visible.count && !fomod.steps[visible[page]].name.isEmpty ? fomod.steps[visible[page]].name : prepared.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { cancel() } }
                 ToolbarItem(placement: .confirmationAction) {
                     if page + 1 < visible.count {
                         Button("Next") { page += 1 }.disabled(!complete(visible[page]))

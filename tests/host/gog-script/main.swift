@@ -56,6 +56,25 @@ check(GOGInstallScript.isScriptName("goggame-1207658924.script") && GOGInstallSc
       && !GOGInstallScript.isScriptName("goggame-12a.script"), "script names")
 check(GOGInstallScript.parse(Data("{\"playTasks\": []}".utf8)) == nil && GOGInstallScript.parse(Data("x".utf8)) == nil, "not a script")
 
+// The real Witcher EE script (GOG build 58076094395251196): one Execute, no setRegistry.
+let real = """
+{ "actions": [ { "install": { "action": "Execute", "arguments": { "argument": "",
+  "executable": "galaxy_the_witcher_enhanced_edition_2.1.0.15.exe", "runAsAdmin": true, "workingDir": "" } },
+  "languages": ["*"], "name": "Install the game" } ], "productId": "1207658924" }
+"""
+if let realScript = GOGInstallScript.parse(Data(real.utf8)) {
+    let realPlan = realScript.plan(folder: folder, language: "en-US")
+    func realValue(_ name: String) -> GOGInstallScript.Value? { realPlan.values.first { $0.name == name } }
+    check(realPlan.values.count == 4, "real Witcher script: Execute gives the 4 known values")
+    check(realValue("InstallFolder") == .init(root: .machine, key: "Software\\CD Projekt Red\\The Witcher", name: "InstallFolder",
+                                             data: .string(folder), followsInstall: true), "real Witcher script: InstallFolder is the folder")
+    check(realValue("IsDjinniInstalled")?.data == .dword(1) && realValue("Language")?.data == .string("3")
+          && realValue("RegionVersion")?.data == .string("US"), "real Witcher script: IsDjinniInstalled, Language, RegionVersion")
+    check(realPlan.notes.contains { $0.contains("replaced by its known registry values") }, "real Witcher script: noted")
+    var other = realScript; other.productID = "1"
+    check(other.plan(folder: folder, language: "en-US").values.isEmpty, "Execute of an unknown product still left out")
+} else { check(false, "real Witcher script parses") }
+
 let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("gog-script-\(getpid())")
 try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
 for name in ["goggame-2.script", "goggame-1.script", "goggame-1.info", "readme.script"] {

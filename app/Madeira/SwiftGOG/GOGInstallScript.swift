@@ -84,12 +84,40 @@ struct GOGInstallScript: Equatable, Sendable {
             if let bits = action.osBitness, !bits.contains("64") { continue }
             switch action.kind.lowercased() {
             case "setregistry": registry(action, folder: folder, label: label, into: &plan)
+            case "execute" where Self.knownExecuteValues[productID] != nil:
+                // The program (a Galaxy-only setup exe in GOG's support folder) is not
+                // downloaded; write the values it is known to set instead.
+                for value in Self.knownExecuteValues[productID] ?? [] {
+                    var value = value
+                    if case .string(let text) = value.data, let expanded = Self.expand(text, folder: folder) {
+                        value.data = .string(expanded)
+                        value.followsInstall = expanded != text
+                    }
+                    plan.values.removeAll { $0.root == value.root && $0.key.lowercased() == value.key.lowercased() && $0.name.lowercased() == value.name.lowercased() }
+                    plan.values.append(value)
+                }
+                plan.notes.append("\(label): Execute \(action.arguments["executable"] ?? "") replaced by its known registry values")
             case "":            plan.notes.append("\(label): no action")
             default:            plan.notes.append("\(label): \(action.kind) left out")
             }
         }
         return plan
     }
+
+    /// Values a product's Execute action (a setup exe GOG Galaxy runs from the support
+    /// folder) writes, for products whose script has no setRegistry actions. `{app}` is
+    /// the game's folder. The Witcher: Enhanced Edition (1207658924) runs
+    /// galaxy_the_witcher_enhanced_edition_*.exe; launcher.exe and System\witcher.exe
+    /// both quit at once without these (device-tested by hand on build 64, 2026-11-01;
+    /// values as Games Nebula's GOG script sets them).
+    static let knownExecuteValues: [String: [Value]] = [
+        "1207658924": [
+            Value(root: .machine, key: "Software\\CD Projekt Red\\The Witcher", name: "InstallFolder", data: .string("{app}"), followsInstall: true),
+            Value(root: .machine, key: "Software\\CD Projekt Red\\The Witcher", name: "IsDjinniInstalled", data: .dword(1), followsInstall: false),
+            Value(root: .machine, key: "Software\\CD Projekt Red\\The Witcher", name: "Language", data: .string("3"), followsInstall: false),
+            Value(root: .machine, key: "Software\\CD Projekt Red\\The Witcher", name: "RegionVersion", data: .string("US"), followsInstall: false),
+        ],
+    ]
 
     private func registry(_ action: Action, folder: String, label: String, into plan: inout Plan) {
         let args = action.arguments

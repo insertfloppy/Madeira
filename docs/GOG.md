@@ -76,7 +76,13 @@ so HKLM `Software` values land in both registry views). `{app}` and `{supportDir
 become the game's folder. Actions for another language or for 32-bit Windows only
 are skipped. A value the prefix already has is kept, except one made from the
 game's folder, which follows the folder. `savePath`, `setIni`, `installSDB` and
-`Execute` are left out and logged. Log tag `[gog-script]`. A game installed before
+`Execute` are left out and logged. Log tag `[gog-script]`.
+Some scripts have no `setRegistry` at all: their one `Execute` runs a small setup
+program from GOG's support folder that writes the keys, and Madeira does not
+download or run it. For those, `GOGInstallScript.knownExecuteValues` lists the
+values the program writes, by product. The Witcher: Enhanced Edition (1207658924,
+`galaxy_the_witcher_enhanced_edition_*.exe`) gets `InstallFolder` = the folder,
+`IsDjinniInstalled` = 1, `Language` = "3" and `RegionVersion` = "US". A game installed before
 this change gets its script with Repair installed files.
 `python3 tests/host/check-gog-install-script.py` checks it.
 
